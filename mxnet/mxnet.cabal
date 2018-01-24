@@ -46,6 +46,7 @@ Library
                           , template-haskell >= 2.10.0.0
                           , unordered-containers >= 0.2.7.0
                           , vector >= 0.10.0.0
+                          , tuple-ops == 0.0.0.2
     extra-libraries:        mxnet
 
 Test-Suite mxnet-test

@@ -16,6 +16,9 @@
 {-# LANGUAGE Strict #-}
 #endif
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
+
 
 module MXNet.Core.Base.Internal.Raw where
 
@@ -27,7 +30,11 @@ import Foreign.Storable
 
 import C2HS.C.Extra.Marshal
 
+import Data.Typeable
+import Control.Exception.Base
+
 {#import MXNet.Core.Types.Internal.Raw #}
+import Data.Tuple.Ops
 
 #include <mxnet/c_api.h>
 
@@ -38,6 +45,19 @@ import C2HS.C.Extra.Marshal
 {#fun MXGetLastError as mxGetLastError
     {
     } -> `String' #}
+
+
+data MXNetError = MXNetError String
+    deriving (Typeable, Show)
+instance Exception MXNetError
+
+checked :: Unconsable t Int r => IO t -> IO r
+checked call = do
+    (res, ret) <- uncons <$> call
+    if res < 0 
+      then do err <- mxGetLastError
+              throwIO $ MXNetError err
+      else return ret
 
 -------------------------------------------------------------------------------
 
@@ -132,16 +152,15 @@ import C2HS.C.Extra.Marshal
 
 -- | Load list of narray from the file.
 mxNDArrayLoad :: String                         -- ^ Name of the file.
-              -> IO (Int,
-                     MXUInt, [NDArrayHandle],
+              -> IO (MXUInt, [NDArrayHandle],
                      MXUInt, [String])          -- ^ The size of ndarray handles, ndarray
                                                 -- handles the number of names and the
                                                 -- returned names.
 mxNDArrayLoad fname = do
-    (res, c1, p1, c2, p2) <- mxNDArrayLoadImpl fname
+    (c1, p1, c2, p2) <- checked $ mxNDArrayLoadImpl fname
     handles <- peekArray (fromIntegral c1) p1
     names <- peekStringArray c2 p2
-    return (res, c1, handles, c2, names)
+    return (c1, handles, c2, names)
 
 -- | Perform a synchronize copy from a continugous CPU memory region.
 -- This is useful to copy data from existing memory region that are
@@ -213,11 +232,11 @@ mxNDArrayLoad fname = do
 
 -- Get the shape of the array.
 mxNDArrayGetShape :: NDArrayHandle
-                  -> IO (Int, MXUInt, [MXUInt]) -- ^ The output dimension and it's shape.
+                  -> IO (MXUInt, [MXUInt]) -- ^ The output dimension and it's shape.
 mxNDArrayGetShape handle = do
-    (res, d, p) <- mxNDArrayGetShapeImpl handle
+    (d, p) <- checked $ mxNDArrayGetShapeImpl handle
     shapes <- peekArray (fromIntegral d) p
-    return (res, d, shapes)
+    return (d, shapes)
 
 -- | Get the content of the data in NDArray.
 {#fun MXNDArrayGetData as mxNDArrayGetData
@@ -249,11 +268,10 @@ mxNDArrayGetShape handle = do
     } -> `Int' #}
 
 -- | List all the available functions handles.
-mxListFunctions :: IO (Int, [FunctionHandle]) -- ^ The output function handle array.
+mxListFunctions :: IO ([FunctionHandle]) -- ^ The output function handle array.
 mxListFunctions = do
-    (res, c, p) <- mxListFunctionsImpl
-    fs <- peekArray (fromIntegral c) p
-    return (res, fs)
+    (c, p) <- checked mxListFunctionsImpl
+    peekArray (fromIntegral c) p
 
 -- | Get the function handle by name.
 {#fun MXGetFunction as mxGetFunction
@@ -275,8 +293,7 @@ mxListFunctions = do
 
 -- | Get the information of the function handle.
 mxFuncGetInfo :: FunctionHandle                     -- ^ The target function handle.
-              -> IO (Int,
-                     String, String,
+              -> IO (String, String,
                      MXUInt,
                      [String], [String], [String],
                      String)                        -- ^ The name of returned function,
@@ -285,11 +302,11 @@ mxFuncGetInfo :: FunctionHandle                     -- ^ The target function han
                                                     -- descriptions, as well as the return
                                                     -- type of this function.
 mxFuncGetInfo handle = do
-    (res, name, desc, argc, argv, argtype, argdesc, rettype) <- mxFuncGetInfoImpl handle
+    (name, desc, argc, argv, argtype, argdesc, rettype) <- checked $ mxFuncGetInfoImpl handle
     argv' <- peekStringArray argc argv
     argtype' <- peekStringArray argc argtype
     argdesc' <- peekStringArray argc argdesc
-    return (res, name, desc, argc, argv', argtype', argdesc', rettype)
+    return (name, desc, argc, argv', argtype', argdesc', rettype)
 
 -- | Get the argument requirements of the function.
 {#fun MXFuncDescribe as mxFuncDescribe
@@ -339,31 +356,30 @@ mxImperativeInvoke :: AtomicSymbolCreator       -- ^ Creator/Handler of the OP.
                    -> [NDArrayHandle]           -- ^ Input NDArrays.
                    -> [(String, String)]        -- ^ Keywords parameters.
                    -> Maybe [NDArrayHandle]     -- ^ Original given output handles array.
-                   -> IO (Int, [NDArrayHandle]) -- ^ Return NDArrays as result.
+                   -> IO [NDArrayHandle]        -- ^ Return NDArrays as result.
 mxImperativeInvoke creator inputs params outputs = do
     let (keys, values) = unzip params
         ninput = length inputs
         nparam = length params
-    (res, n, p) <- case outputs of
+    (n, p) <- case outputs of
         Nothing -> alloca $ \pn ->
             alloca $ \pp -> do
                 poke pn 0
                 poke pp nullPtr
-                res' <- mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
+                checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
                 n' <- fromIntegral <$> peek pn
                 p' <- peek pp
-                return (res', n', p')
+                return (n', p')
         Just out -> alloca $ \pn ->
             alloca $ \pp -> do
                 withArray out $ \p' -> do
                     poke pn (fromIntegral $ length out)
                     poke pp p'
-                    res' <- mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
+                    checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
                     n' <- fromIntegral <$> peek pn
-                    return (res', n', p')
-    arrays <- if n == 0 then return [] else peekArray n p
-    return (res, arrays)
-
+                    return (n', p')
+    if n == 0 then return [] else peekArray n p
+    
 -------------------------------------------------------------------------------
 
 {#fun MXListAllOpNames as mxListAllOpNamesImpl
@@ -372,11 +388,10 @@ mxImperativeInvoke creator inputs params outputs = do
     } -> `Int' #}
 
 -- | List all the available operator names, include entries.
-mxListAllOpNames :: IO (Int, [String])
+mxListAllOpNames :: IO [String]
 mxListAllOpNames = do
-    (res, n, p) <- mxListAllOpNamesImpl
-    names <- peekStringArray (fromIntegral n :: Int) p
-    return (res, names)
+    (n, p) <- checked mxListAllOpNamesImpl
+    peekStringArray (fromIntegral n :: Int) p
 
 {#fun MXSymbolListAtomicSymbolCreators as mxSymbolListAtomicSymbolCreatorsImpl
     { alloca- `MXUInt' peek*
@@ -385,11 +400,10 @@ mxListAllOpNames = do
 
 -- | List all the available @AtomicSymbolCreator@.
 mxSymbolListAtomicSymbolCreators
-    :: IO (Int, [AtomicSymbolCreator])  -- ^ The atomic symbol creators list.
+    :: IO [AtomicSymbolCreator]  -- ^ The atomic symbol creators list.
 mxSymbolListAtomicSymbolCreators = do
-    (res, n, p) <- mxSymbolListAtomicSymbolCreatorsImpl
-    ss <- peekArray (fromIntegral n) p
-    return (res, ss)
+    (n, p) <- checked mxSymbolListAtomicSymbolCreatorsImpl
+    peekArray (fromIntegral n) p
 
 -- | Get the name of an atomic symbol.
 {#fun MXSymbolGetAtomicSymbolName as mxSymbolGetAtomicSymbolName
@@ -413,7 +427,7 @@ mxSymbolListAtomicSymbolCreators = do
 -- | Get the detailed information about atomic symbol.
 mxSymbolGetAtomicSymbolInfo
     :: AtomicSymbolCreator
-    -> IO (Int, String, String, MXUInt,
+    -> IO (String, String, MXUInt,
            [String], [String], [String],
            String, String)                  -- ^ Return the name and description of the symbol,
                                             -- the name, type and description of it's arguments,
@@ -422,11 +436,11 @@ mxSymbolGetAtomicSymbolInfo
                                             -- symbol.
 mxSymbolGetAtomicSymbolInfo creator = do
     -- Documentation for kargs: https://github.com/dmlc/mxnet/blob/master/include/mxnet/c_api.h#L555
-    (res, name, desc, argc, argv, argtype, argdesc, kargs, rettype) <- mxSymbolGetAtomicSymbolInfoImpl creator
+    (name, desc, argc, argv, argtype, argdesc, kargs, rettype) <- checked $ mxSymbolGetAtomicSymbolInfoImpl creator
     argv' <- peekStringArray argc argv
     argtype' <- peekStringArray argc argtype
     argdesc' <- peekStringArray argc argdesc
-    return (res, name, desc, argc, argv', argtype', argdesc', kargs, rettype)
+    return (name, desc, argc, argv', argtype', argdesc', kargs, rettype)
 
 -- | Create an AtomicSymbol.
 {#fun MXSymbolCreateAtomicSymbol as mxSymbolCreateAtomicSymbol
@@ -528,11 +542,10 @@ mxSymbolGetAtomicSymbolInfo creator = do
 
 -- | Get all attributes from symbol, including all descendents.
 mxSymbolListAttr :: SymbolHandle
-                 -> IO (Int, [String])  -- ^ The attributes list.
+                 -> IO [String]  -- ^ The attributes list.
 mxSymbolListAttr symbol = do
-    (res, n, p) <- mxSymbolListAttrImpl symbol
-    ss <- peekStringArray n p
-    return (res, ss)
+    (n, p) <- checked $ mxSymbolListAttrImpl symbol
+    peekStringArray n p
 
 {#fun MXSymbolListAttrShallow as mxSymbolListAttrShallowImpl
     { id `SymbolHandle'
@@ -542,11 +555,10 @@ mxSymbolListAttr symbol = do
 
 -- | Get all attributes from symbol, excluding descendents.
 mxSymbolListAttrShallow :: SymbolHandle
-                        -> IO (Int, [String])   -- ^ The attributes list.
+                        -> IO [String]   -- ^ The attributes list.
 mxSymbolListAttrShallow symbol = do
-    (res, n, p) <- mxSymbolListAttrShallowImpl symbol
-    ss <- peekStringArray n p
-    return (res, ss)
+    (n, p) <- checked $ mxSymbolListAttrShallowImpl symbol
+    peekStringArray n p
 
 {#fun MXSymbolListArguments as mxSymbolListArgumentsImpl
     { id `SymbolHandle'
@@ -556,11 +568,10 @@ mxSymbolListAttrShallow symbol = do
 
 -- | List arguments in the symbol.
 mxSymbolListArguments :: SymbolHandle
-                      -> IO (Int, [String]) -- ^ List of arguments' names.
+                      -> IO [String] -- ^ List of arguments' names.
 mxSymbolListArguments symbol = do
-    (res, n, p) <- mxSymbolListArgumentsImpl symbol
-    ss <- peekStringArray n p
-    return (res, ss)
+    (n, p) <- checked $ mxSymbolListArgumentsImpl symbol
+    peekStringArray n p
 
 {#fun MXSymbolListOutputs as mxSymbolListOutputsImpl
     { id `SymbolHandle'
@@ -570,11 +581,10 @@ mxSymbolListArguments symbol = do
 
 -- | List returns in the symbol.
 mxSymbolListOutputs :: SymbolHandle
-                    -> IO (Int, [String])   -- ^ The outputs' names.
+                    -> IO [String]   -- ^ The outputs' names.
 mxSymbolListOutputs symbol = do
-    (res, n, p) <- mxSymbolListOutputsImpl symbol
-    ss <- peekStringArray n p
-    return (res, ss)
+    (n, p) <- checked $ mxSymbolListOutputsImpl symbol
+    peekStringArray n p
 
 -- | Get a symbol that contains all the internals.
 {#fun MXSymbolGetInternals as mxSymbolGetInternals
@@ -600,11 +610,10 @@ mxSymbolListOutputs symbol = do
 -- | List auxiliary states in the symbol.
 mxSymbolListAuxiliaryStates
     :: SymbolHandle
-    -> IO (Int, [String])   -- ^ The output string array.
+    -> IO [String]   -- ^ The output string array.
 mxSymbolListAuxiliaryStates symbol = do
-    (res, n, p) <- mxSymbolListAuxiliaryStatesImpl symbol
-    ss <- peekStringArray n p
-    return (res, ss)
+    (n, p) <- checked $ mxSymbolListAuxiliaryStatesImpl symbol
+    peekStringArray n p
 
 -- | Compose the symbol on other symbols.
 {#fun MXSymbolCompose as mxSymbolCompose
@@ -648,7 +657,7 @@ mxSymbolInferShape
     -> [String]                              -- ^ Keys of keyword arguments, optional.
     -> [Int]                                 -- ^ The head pointer of the rows in CSR.
     -> [Int]                                 -- ^ The content of the CSR.
-    -> IO (Int, [[Int]], [[Int]], [[Int]])   -- ^ Return the in, out and auxiliary
+    -> IO ([[Int]], [[Int]], [[Int]])        -- ^ Return the in, out and auxiliary
                                              -- shape size, ndim and data (array
                                              -- of pointers to head of the input
                                              -- shape), and whether infer shape
@@ -657,7 +666,7 @@ mxSymbolInferShape
 mxSymbolInferShape sym keys ind shapedata = do
     let argc = fromIntegral (length keys)   -- Number of input arguments.
     -- Notice: the complete result are ignored for simplification.
-    (res, in_size, in_ndim, in_data, out_size, out_ndim, out_data, aux_size, aux_ndim, aux_data, _) <- mxSymbolInferShapeImpl sym argc keys ind shapedata
+    (in_size, in_ndim, in_data, out_size, out_ndim, out_data, aux_size, aux_ndim, aux_data, _) <- checked $ mxSymbolInferShapeImpl sym argc keys ind shapedata
     in_ndim' <- peekIntegralArray (fromIntegral in_size) in_ndim
     in_data' <- peekArray (fromIntegral in_size) in_data
     in_data'' <- mapM (uncurry peekIntegralArray) (zip in_ndim' in_data')
@@ -667,7 +676,7 @@ mxSymbolInferShape sym keys ind shapedata = do
     aux_ndim' <- peekIntegralArray (fromIntegral aux_size) aux_ndim
     aux_data' <- peekArray (fromIntegral aux_size) aux_data
     aux_data'' <- mapM (uncurry peekIntegralArray) (zip aux_ndim' aux_data')
-    return (res, in_data'', out_data'', aux_data'')
+    return (in_data'', out_data'', aux_data'')
 
 {#fun MXSymbolInferShapePartial as mxSymbolInferShapePartialImpl
     { id `SymbolHandle'
@@ -693,7 +702,7 @@ mxSymbolInferShapePartial
     -> [String]                              -- ^ Keys of keyword arguments, optional.
     -> [Int]                             -- ^ The head pointer of the rows in CSR.
     -> [Int]                             -- ^ The content of the CSR.
-    -> IO (Int, [[Int]], [[Int]], [[Int]])  -- ^ Return the in, out and auxiliary array's
+    -> IO ([[Int]], [[Int]], [[Int]])  -- ^ Return the in, out and auxiliary array's
                                             -- shape size, ndim and data (array of pointers
                                             -- to head of the input shape), and whether
                                             -- infer shape completes or more information is
@@ -701,7 +710,7 @@ mxSymbolInferShapePartial
 mxSymbolInferShapePartial sym keys ind shapedata = do
     let argc = fromIntegral (length keys)   -- Number of input arguments.
     -- Notice: the complete result are ignored for simplification.
-    (res, in_size, in_ndim, in_data, out_size, out_ndim, out_data, aux_size, aux_ndim, aux_data, _) <- mxSymbolInferShapePartialImpl sym argc keys ind shapedata
+    (in_size, in_ndim, in_data, out_size, out_ndim, out_data, aux_size, aux_ndim, aux_data, _) <- checked $ mxSymbolInferShapePartialImpl sym argc keys ind shapedata
     in_ndim' <- peekIntegralArray (fromIntegral in_size) in_ndim
     in_data' <- peekArray (fromIntegral in_size) in_data
     in_data'' <- mapM (uncurry peekIntegralArray) (zip in_ndim' in_data')
@@ -711,7 +720,7 @@ mxSymbolInferShapePartial sym keys ind shapedata = do
     aux_ndim' <- peekIntegralArray (fromIntegral aux_size) aux_ndim
     aux_data' <- peekArray (fromIntegral aux_size) aux_data
     aux_data'' <- mapM (uncurry peekIntegralArray) (zip aux_ndim' aux_data')
-    return (res, in_data'', out_data'', aux_data'')
+    return (in_data'', out_data'', aux_data'')
 
 {#fun MXSymbolInferType as mxSymbolInferTypeImpl
     { id `SymbolHandle'             -- ^ Symbol handle.
@@ -733,16 +742,16 @@ mxSymbolInferShapePartial sym keys ind shapedata = do
 -- | Infer type of unknown input types given the known one.
 mxSymbolInferType :: SymbolHandle                   -- ^ Symbol handle.
                   -> [String]                       -- ^ Input arguments.
-                  -> IO (Int, [Int], [Int], [Int])  -- ^ Return arg_types, out_types and aux_types.
+                  -> IO ([Int], [Int], [Int])  -- ^ Return arg_types, out_types and aux_types.
 mxSymbolInferType handle args = do
     let nargs = fromIntegral (length args)
         csr = []
     -- Notice: the complete result are ignored for simplification.
-    (res, narg, parg, nout, pout, naux, paux, _) <- mxSymbolInferTypeImpl handle nargs args csr
+    (narg, parg, nout, pout, naux, paux, _) <- checked $ mxSymbolInferTypeImpl handle nargs args csr
     args <- peekIntegralArray (fromIntegral narg) parg
     outs <- peekIntegralArray (fromIntegral nout) pout
     auxs <- peekIntegralArray (fromIntegral naux) paux
-    return (res, args, outs, auxs)
+    return (args, outs, auxs)
 
 -------------------------------------------------------------------------------
 
@@ -853,11 +862,10 @@ mxExecutorOutputs handle = do
     } -> `Int' #}
 
 -- | List all the available iterator entries.
-mxListDataIters :: IO (Int, [DataIterCreator]) -- ^ The output iterator entries.
+mxListDataIters :: IO [DataIterCreator] -- ^ The output iterator entries.
 mxListDataIters = do
-    (res, c, p) <- mxListDataItersImpl
-    creators <- peekArray (fromIntegral c) p
-    return (res, creators)
+    (c, p) <- checked $ mxListDataItersImpl
+    peekArray (fromIntegral c) p
 
 -- | Init an iterator, init with parameters the array size of passed in arguments.
 {#fun MXDataIterCreateIter as mxDataIterCreateIter
@@ -881,7 +889,7 @@ mxListDataIters = do
 -- | Get the detailed information about data iterator.
 mxDataIterGetIterInfo :: DataIterCreator                    -- ^ The handle pointer to the
                                                             -- data iterator.
-                      -> IO (Int, String, String,
+                      -> IO (String, String,
                              MXUInt,
                              [String], [String], [String])  -- ^ Return the name and description
                                                             -- of the data iter creator,
@@ -889,11 +897,11 @@ mxDataIterGetIterInfo :: DataIterCreator                    -- ^ The handle poin
                                                             -- it's arguments, as well as the
                                                             -- return type of this symbol.
 mxDataIterGetIterInfo creator = do
-    (res, name, desc, argc, argv, argtype, argdesc) <- mxDataIterGetIterInfoImpl creator
+    (name, desc, argc, argv, argtype, argdesc) <- checked $ mxDataIterGetIterInfoImpl creator
     argv' <- peekStringArray argc argv
     argtype' <- peekStringArray argc argtype
     argdesc' <- peekStringArray argc argdesc
-    return (res, name, desc, argc, argv', argtype', argdesc')
+    return (name, desc, argc, argv', argtype', argdesc')
 
 -- | Get the detailed information about data iterator.
 
@@ -936,14 +944,13 @@ mxDataIterGetIterInfo creator = do
 -- | Get the image index by array.
 mxDataIterGetIndex :: DataIterHandle        -- ^ The handle pointer to the data iterator.
 #ifdef mingw32_HOST_OS
-                   -> IO (Int, [CULLong])   -- ^ Output indices of the array.
+                   -> IO ([CULLong])   -- ^ Output indices of the array.
 #else
-                   -> IO (Int, [CULong])    -- ^ Output indices of the array.
+                   -> IO ([CULong])    -- ^ Output indices of the array.
 #endif
 mxDataIterGetIndex creator = do
-    (res, p, c) <- mxDataIterGetIndexImpl creator
-    indices <- peekArray (fromIntegral c) p
-    return (res, indices)
+    (p, c) <- checked $ mxDataIterGetIndexImpl creator
+    peekArray (fromIntegral c) p
 
 -- | Get the padding number in current data batch.
 {#fun MXDataIterGetPadNum as mxDataIterGetPadNum

@@ -13,12 +13,15 @@
 {-# LANGUAGE Trustworthy #-}
 #endif
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module MXNet.Core.Types.Internal.Raw where
 
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.Generics
 
 #include <nnvm/c_api.h>
 #include <mxnet/c_api.h>
@@ -63,6 +66,7 @@ instance Storable OpHandle where
 
 -- | Handle to a symbol that can be bind as operator.
 {#pointer SymbolHandle newtype #}
+deriving instance Generic SymbolHandle
 
 instance Storable SymbolHandle where
     sizeOf (SymbolHandle t) = sizeOf t
@@ -72,6 +76,7 @@ instance Storable SymbolHandle where
 
 -- | Handle to Graph.
 {#pointer GraphHandle newtype #}
+deriving instance Generic GraphHandle
 
 instance Storable GraphHandle where
     sizeOf (GraphHandle t) = sizeOf t
@@ -85,6 +90,7 @@ instance Storable GraphHandle where
 
 -- | Handle to NDArray.
 {#pointer NDArrayHandle newtype #}
+deriving instance Generic NDArrayHandle
 
 instance Storable NDArrayHandle where
     sizeOf (NDArrayHandle t) = sizeOf t
@@ -94,6 +100,7 @@ instance Storable NDArrayHandle where
 
 -- | Handle to a mxnet narray function that changes NDArray.
 {#pointer FunctionHandle newtype #}
+deriving instance Generic FunctionHandle
 
 instance Storable FunctionHandle where
     sizeOf (FunctionHandle t) = sizeOf t
@@ -106,6 +113,7 @@ type AtomicSymbolCreator = OpHandle
 
 -- | Handle to a AtomicSymbol.
 {#pointer AtomicSymbolHandle newtype #}
+deriving instance Generic AtomicSymbolHandle
 
 instance Storable AtomicSymbolHandle where
     sizeOf (AtomicSymbolHandle t) = sizeOf t
@@ -114,6 +122,7 @@ instance Storable AtomicSymbolHandle where
     poke p (AtomicSymbolHandle t) = poke (castPtr p) t
 
 {#pointer ExecutorHandle newtype #}
+deriving instance Generic ExecutorHandle
 
 -- | Handle to an Executor.
 instance Storable ExecutorHandle where
@@ -124,6 +133,7 @@ instance Storable ExecutorHandle where
 
 -- | Handle a dataiter creator.
 {#pointer DataIterCreator newtype #}
+deriving instance Generic DataIterCreator
 
 instance Storable DataIterCreator where
     sizeOf (DataIterCreator t) = sizeOf t
@@ -133,6 +143,7 @@ instance Storable DataIterCreator where
 
 -- | Handle to a DataIterator.
 {#pointer DataIterHandle newtype #}
+deriving instance Generic DataIterHandle
 
 instance Storable DataIterHandle where
     sizeOf (DataIterHandle t) = sizeOf t
@@ -142,6 +153,7 @@ instance Storable DataIterHandle where
 
 -- | Handle to KVStore.
 {#pointer KVStoreHandle newtype #}
+deriving instance Generic KVStoreHandle
 
 instance Storable KVStoreHandle where
     sizeOf (KVStoreHandle t) = sizeOf t
@@ -151,6 +163,7 @@ instance Storable KVStoreHandle where
 
 -- | Handle to RecordIO.
 {#pointer RecordIOHandle newtype #}
+deriving instance Generic RecordIOHandle
 
 instance Storable RecordIOHandle where
     sizeOf (RecordIOHandle t) = sizeOf t
@@ -160,6 +173,7 @@ instance Storable RecordIOHandle where
 
 -- | Handle to MXRtc.
 {#pointer RtcHandle newtype #}
+deriving instance Generic RtcHandle
 
 instance Storable RtcHandle where
     sizeOf (RtcHandle t) = sizeOf t
@@ -169,9 +183,11 @@ instance Storable RtcHandle where
 
 -- | Callback: ExecutorMonitorCallback.
 {#pointer ExecutorMonitorCallback newtype #}
+deriving instance Generic ExecutorMonitorCallback
 
 -- | Callback: CustomOpPropCreator.
 {#pointer CustomOpPropCreator newtype #}
+deriving instance Generic CustomOpPropCreator
 
 -- | Callback: MXKVStoreUpdater, user-defined updater for the kvstore.
 type MXKVStoreUpdater = Int             -- ^ The key.
