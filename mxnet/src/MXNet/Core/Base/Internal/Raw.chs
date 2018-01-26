@@ -34,7 +34,7 @@ import Data.Typeable
 import Control.Exception.Base
 
 {#import MXNet.Core.Types.Internal.Raw #}
-import Data.Tuple.Ops
+import MXNet.Core.Base.Internal.TrustPkgs
 
 #include <mxnet/c_api.h>
 

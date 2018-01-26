@@ -36,6 +36,7 @@ Library
         MXNet.Core.Predict.Internal.Raw
         MXNet.Core.NNVM.Internal.Raw
         MXNet.Core.Base.Internal.TH
+        MXNet.Core.Base.Internal.TrustPkgs
     hs-source-dirs:         src
     build-tools:            c2hs
     ghc-options:            -Wall
@@ -46,7 +47,7 @@ Library
                           , template-haskell >= 2.10.0.0
                           , unordered-containers >= 0.2.7.0
                           , vector >= 0.10.0.0
-                          , tuple-ops == 0.0.0.2
+                          , tuple-ops == 0.0.0.1
     extra-libraries:        mxnet
 
 Test-Suite mxnet-test
