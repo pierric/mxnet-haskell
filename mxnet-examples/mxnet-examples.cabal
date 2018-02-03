@@ -51,3 +51,4 @@ Executable mnist
                           , unordered-containers >= 0.2.7.0
                           , mtl >= 2.2
                           , ghc-prim
+                          , binary

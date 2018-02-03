@@ -17,8 +17,10 @@ import Data.Maybe (isNothing)
 import Control.Monad (when, forM_)
 import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
+import qualified Streaming as SR
 import Control.Monad.Trans.Resource
 import Control.Monad.Morph (lift)
+import qualified Data.Vector as NV
 
 import Dataset
 
@@ -32,12 +34,12 @@ neural = do
     b2 <- variable "b2" :: IO SymbolF
     fullyConnected a1 w2 b2 10 >>= flip softmaxOutput y
 
-    
+
 data Param = Param { _param_in :: ArrayF, _param_grad :: ArrayF }
     deriving Show
-type TrainM = ST.StateT (Maybe (M.HashMap String Param)) IO
+type TrainM m = ST.StateT (Maybe (M.HashMap String Param)) m
 
-train :: TrainM r -> IO r
+train :: Monad m => TrainM m r -> m r
 train = flip ST.evalStateT Nothing
 
 initParam :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String Param)
@@ -60,7 +62,7 @@ initParam sym dat = do
                 return $ Param (A.NDArray in_handle) grad
     formatShape shp = concat $ ["("] ++ intersperse "," (map show shp) ++ [")"]
 
-trainStep :: SymbolF -> M.HashMap String ArrayF -> TrainM ()
+trainStep :: MonadIO m => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
 trainStep net datAndLbl  = do
      uninited <- ST.gets isNothing
      when uninited (liftIO (initParam net datAndLbl) >>= ST.put . Just)
@@ -86,5 +88,13 @@ bindParam net args = do
 main = do
   _  <- mxListAllOpNames
   net <- neural
-  train $ runResourceT $ flip SR.mapM_ trainingData $ \ (dat, lbl) -> do 
-    lift $ trainStep net $ M.fromList [("x", dat), ("y", lbl)]
+  runResourceT $ train $ go 3 net trainingData  
+
+  where
+    go = go' 0
+    go' i n net dat
+      | i < n = do liftIO $ putStrLn $ "iteration " ++ show i
+                   SR.iterT SR.snd' $ SR.chain (\(dat, lbl) -> trainStep net $ M.fromList [("x", dat), ("y", lbl)]) dat
+                   go' (i+1) n net dat
+      | otherwise = return ()
+
