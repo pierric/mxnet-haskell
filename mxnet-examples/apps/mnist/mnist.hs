@@ -6,24 +6,22 @@ module Main where
 import MXNet.Core.Base
 import MXNet.Core.Base.Internal
 import qualified MXNet.Core.Base.NDArray as A
+import qualified MXNet.Core.Base.Symbol as S
 import qualified MXNet.Core.Base.Executor as E
 import qualified MXNet.Core.Base.Internal.TH.NDArray as A
-import qualified MXNet.Core.Base.Symbol as S
-import qualified MXNet.Core.Base.Internal.TH.Symbol as S
 import qualified Data.HashMap.Strict as M
 import Data.List (intersperse)
 import qualified Control.Monad.State as ST
 import Data.Maybe (isNothing)
-import Control.Monad (when, forM_)
+import Control.Monad (when)
 import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
 import qualified Streaming as SR
 import Control.Monad.Trans.Resource
-import Control.Monad.Morph (lift)
-import qualified Data.Vector as NV
 
 import Dataset
 
+neural :: IO SymbolF
 neural = do
     x  <- variable "x"  :: IO SymbolF 
     y  <- variable "y"  :: IO SymbolF
@@ -85,16 +83,17 @@ bindParam net args = do
     
     makeExecutor exec_handle
 
+main :: IO ()
 main = do
   _  <- mxListAllOpNames
   net <- neural
-  runResourceT $ train $ go 3 net trainingData  
+  runResourceT $ train $ go (3 :: Int) net trainingData  
 
   where
     go = go' 0
     go' i n net dat
       | i < n = do liftIO $ putStrLn $ "iteration " ++ show i
-                   SR.iterT SR.snd' $ SR.chain (\(dat, lbl) -> trainStep net $ M.fromList [("x", dat), ("y", lbl)]) dat
+                   _ <- SR.iterT SR.snd' $ SR.chain (\(x, y) -> trainStep net $ M.fromList [("x", x), ("y", y)]) dat
                    go' (i+1) n net dat
       | otherwise = return ()
 
