@@ -13,7 +13,7 @@ import qualified Data.HashMap.Strict as M
 import Data.List (intersperse)
 import qualified Control.Monad.State as ST
 import Data.Maybe (isNothing)
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
 import qualified Streaming as SR
@@ -70,12 +70,16 @@ trainStep net datAndLbl  = do
         exec <- bindParam net params'
         checked $ mxExecutorForward (E.getHandle exec) 1
         backward exec
+        void $ flip M.traverseWithKey params' $ \ k v -> do
+            when (not $ M.member k datAndLbl) $ 
+                A.sgd_update (A.getHandle $ _param_in v) (A.getHandle $ _param_grad v) 0.001 nil
 
 bindParam :: SymbolF -> M.HashMap String Param -> IO (Executor Float)
 bindParam net args = do
     names <- listInputs net
     exec_handle <- checked $ mxExecutorBind (S.getHandle net) (deviceType device) (deviceId device)
         (fromIntegral (M.size args))
+        -- the parameters to bind should be arranged in the same order as the names
         (map (A.getHandle . _param_in)   $ map (args M.!) names)
         (map (A.getHandle . _param_grad) $ map (args M.!) names)
         (replicate (M.size args) 1)
