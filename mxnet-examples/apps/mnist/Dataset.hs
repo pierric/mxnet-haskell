@@ -51,6 +51,11 @@ trainingData = S.zip
     (sourceImages "mxnet-examples/data/train-images-idx3-ubyte" & cBatchN 32 & cImageToNDArray      )
     (sourceLabels "mxnet-examples/data/train-labels-idx1-ubyte" & cBatchN 32 & cLabelToOnehotNDArray)
 
+testingData :: MonadResource m => Stream (Of (ArrayF, ArrayF)) m ()
+testingData = S.zip
+    (sourceImages "mxnet-examples/data/t10k-images-idx3-ubyte" & cBatchN 1 & cImageToNDArray      )
+    (sourceLabels "mxnet-examples/data/t10k-labels-idx1-ubyte" & cBatchN 1 & cLabelToOnehotNDArray)
+
 newtype Batched a = Batched { _batch :: NV.Vector a }
 
 size :: Batched a -> Int
