@@ -61,9 +61,13 @@ initParam sym dat = do
     formatShape shp = concat $ ["("] ++ intersperse "," (map show shp) ++ [")"]
 
 trainStep :: MonadIO m => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
-trainStep net datAndLbl  = do
-     uninited <- ST.gets isNothing
+trainStep net datAndLbl = do
+    uninited <- ST.gets isNothing
      when uninited (liftIO (initParam net datAndLbl) >>= ST.put . Just)
+     -- TODO
+     -- check data's _parm_in, if the shape changes (it may happen when the stage shifts from testing to training)
+     --   recreate the _parm_grad with the new shape for all data and label
+     -- bind the parm     
      Just params <- ST.get
      let params' = M.foldrWithKey (\k v -> M.adjust (\p -> p {_param_in = v}) k) params datAndLbl
      liftIO $ do
@@ -73,6 +77,21 @@ trainStep net datAndLbl  = do
         void $ flip M.traverseWithKey params' $ \ k v -> do
             when (not $ M.member k datAndLbl) $ 
                 A.sgd_update (A.getHandle $ _param_in v) (A.getHandle $ _param_grad v) 0.001 nil
+
+trainForwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String ArrayF -> [String] -> TrainM m [ArrayF]
+trainForwardOnly net dat yname =
+     ST.get >>= \case
+        Nothing -> throwM NetworkUninitialized
+        Just params -> do
+            -- TODO
+            -- check data's _parm_in, if the shape changes (it may happen when the stage shifts from training to testing)
+            --   recreate the _parm_grad with the new shape for all data and label
+            -- create the dummy _parm_in for the label
+            -- bind the parm
+            let params' = M.foldrWithKey (\k v -> M.adjust (\p -> p {_param_in = v}) k) params dat
+            liftIO $ do
+                exec <- bindParam net params'
+                checked $ mxExecutorForward (E.getHandle exec) 1
 
 bindParam :: SymbolF -> M.HashMap String Param -> IO (Executor Float)
 bindParam net args = do
@@ -87,17 +106,27 @@ bindParam net args = do
     
     makeExecutor exec_handle
 
+data Exc = NetworkUninitialized
+    deriving (Show, Typeable)
+instance Exception Exc
+
 main :: IO ()
 main = do
   _  <- mxListAllOpNames
   net <- neural
-  runResourceT $ train $ go (3 :: Int) net trainingData  
+  runResourceT $ train $ do 
+    liftIO $ putStrLn $ "[Train] "
+    ST.forM_ (range 3) $ step net trainingData  
+    liftIO $ putStrLn $ "[Test] "
+    result <- SR.toList_ $ flip SR.mapM testingData $ \(x, y) -> do 
+        y' <- trainForwardOnly net (M.singleton "x" x) "y"
+        return (y, y')
+    liftIO $ print $ take 10 result
 
   where
-    go = go' 0
-    go' i n net dat
-      | i < n = do liftIO $ putStrLn $ "iteration " ++ show i
-                   _ <- SR.iterT SR.snd' $ SR.chain (\(x, y) -> trainStep net $ M.fromList [("x", x), ("y", y)]) dat
-                   go' (i+1) n net dat
-      | otherwise = return ()
+    range :: Int -> [Int]
+    range = enumFromTo 1
+    step net dat ind = do
+        liftIO $ putStrLn $ "iteration " ++ show ind
+        SR.mapM_ (\(x, y) -> trainStep net $ M.fromList [("x", x), ("y", y)]) dat
 
