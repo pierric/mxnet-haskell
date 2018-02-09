@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import MXNet.Core.Base
@@ -9,15 +10,18 @@ import qualified MXNet.Core.Base.NDArray as A
 import qualified MXNet.Core.Base.Symbol as S
 import qualified MXNet.Core.Base.Executor as E
 import qualified MXNet.Core.Base.Internal.TH.NDArray as A
+import qualified MXNet.Core.Types.Internal as MXI
 import qualified Data.HashMap.Strict as M
 import Data.List (intersperse)
 import qualified Control.Monad.State as ST
-import Data.Maybe (isNothing)
-import Control.Monad (when, void)
+import Data.Maybe (isNothing, fromJust)
+import Control.Monad (when, void, forM)
 import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
 import qualified Streaming as SR
 import Control.Monad.Trans.Resource
+import Control.Exception.Base
+import Data.Typeable
 
 import Dataset
 
@@ -40,15 +44,19 @@ type TrainM m = ST.StateT (Maybe (M.HashMap String Param)) m
 train :: Monad m => TrainM m r -> m r
 train = flip ST.evalStateT Nothing
 
-initParam :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String Param)
-initParam sym dat = do
-    let (names, vals) = unzip $ M.toList dat
+inferShape :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String [Int])
+inferShape sym known = do
+    let (names, vals) = unzip $ M.toList known
     shapes <- mapM ndshape vals
     let arg_ind = scanl (+) 0 $ map fst shapes
         arg_shp = concat $ map snd shapes
     (inp_shp, _, _) <- mxSymbolInferShape (S.getHandle sym) names arg_ind arg_shp
     inps <- listInputs sym
-    let inp_with_shp = M.fromList $ zip inps inp_shp
+    return $ M.fromList $ zip inps inp_shp
+
+initParam :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String Param)
+initParam sym dat = do
+    inp_with_shp <- inferShape sym dat
     M.traverseWithKey init_with_random_normal inp_with_shp
   where
     init_with_random_normal inp shp = do
@@ -60,53 +68,67 @@ initParam sym dat = do
                 return $ Param (A.NDArray in_handle) grad
     formatShape shp = concat $ ["("] ++ intersperse "," (map show shp) ++ [")"]
 
+buildParamFromShape :: [Int] -> IO Param
+buildParamFromShape shp = do
+    arr <- makeEmptyNDArray shp device True
+    gra <- makeEmptyNDArray shp device True
+    return $ Param arr gra
+
+buildParam :: ArrayF -> IO Param
+buildParam arr = do
+    shp <- ndshape arr
+    gra <- makeEmptyNDArray (snd shp) device True
+    return $ Param arr gra
+
+checkShapeUpd :: M.HashMap String ArrayF -> M.HashMap String ArrayF -> IO Bool
+checkShapeUpd arr1 arr2 = do cs <- sequence $ M.intersectionWithKey chk arr1 arr2
+                             return $ any id $ M.elems cs
+  where
+    chk _ a1 a2 = do
+        s1 <- ndshape a1
+        s2 <- ndshape a2
+        return (s1 /= s2)
+
 trainStep :: MonadIO m => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
 trainStep net datAndLbl = do
     uninited <- ST.gets isNothing
-     when uninited (liftIO (initParam net datAndLbl) >>= ST.put . Just)
-     -- TODO
-     -- check data's _parm_in, if the shape changes (it may happen when the stage shifts from testing to training)
-     --   recreate the _parm_grad with the new shape for all data and label
-     -- bind the parm     
-     Just params <- ST.get
-     let params' = M.foldrWithKey (\k v -> M.adjust (\p -> p {_param_in = v}) k) params datAndLbl
-     liftIO $ do
-        exec <- bindParam net params'
+    when uninited (liftIO (initParam net datAndLbl) >>= ST.put . Just)
+    Just params <- ST.get
+    liftIO $ do 
+        let params' = M.foldrWithKey (\k v -> M.adjust (\p -> p {_param_in = v}) k) params datAndLbl
+        exec <- bindParam net params' True
         checked $ mxExecutorForward (E.getHandle exec) 1
         backward exec
         void $ flip M.traverseWithKey params' $ \ k v -> do
             when (not $ M.member k datAndLbl) $ 
                 A.sgd_update (A.getHandle $ _param_in v) (A.getHandle $ _param_grad v) 0.001 nil
 
-trainForwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String ArrayF -> [String] -> TrainM m [ArrayF]
-trainForwardOnly net dat yname =
+trainForwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String ArrayF -> TrainM m [ArrayF]
+trainForwardOnly net dat =
      ST.get >>= \case
         Nothing -> throwM NetworkUninitialized
-        Just params -> do
-            -- TODO
-            -- check data's _parm_in, if the shape changes (it may happen when the stage shifts from training to testing)
-            --   recreate the _parm_grad with the new shape for all data and label
-            -- create the dummy _parm_in for the label
-            -- bind the parm
+        Just params -> liftIO $ do
             let params' = M.foldrWithKey (\k v -> M.adjust (\p -> p {_param_in = v}) k) params dat
-            liftIO $ do
-                exec <- bindParam net params'
-                checked $ mxExecutorForward (E.getHandle exec) 1
+            exec <- bindParam net params' False
+            checked $ mxExecutorForward (E.getHandle exec) 0
+            getOutputs exec
 
-bindParam :: SymbolF -> M.HashMap String Param -> IO (Executor Float)
-bindParam net args = do
+bindParam :: SymbolF -> M.HashMap String Param -> Bool -> IO (Executor Float)
+bindParam net args train = do
     names <- listInputs net
     exec_handle <- checked $ mxExecutorBind (S.getHandle net) (deviceType device) (deviceId device)
         (fromIntegral (M.size args))
         -- the parameters to bind should be arranged in the same order as the names
         (map (A.getHandle . _param_in)   $ map (args M.!) names)
-        (map (A.getHandle . _param_grad) $ map (args M.!) names)
+        (if train 
+           then map (A.getHandle . _param_grad) $ map (args M.!) names
+           else replicate (M.size args) MXI.nullNDArrayHandle)
         (replicate (M.size args) 1)
         0 []
     
     makeExecutor exec_handle
 
-data Exc = NetworkUninitialized
+data Exc = NetworkUninitialized | UnknownLabelName String
     deriving (Show, Typeable)
 instance Exception Exc
 
@@ -116,10 +138,10 @@ main = do
   net <- neural
   runResourceT $ train $ do 
     liftIO $ putStrLn $ "[Train] "
-    ST.forM_ (range 3) $ step net trainingData  
+    ST.forM_ (range 1) $ step net trainingData  
     liftIO $ putStrLn $ "[Test] "
     result <- SR.toList_ $ flip SR.mapM testingData $ \(x, y) -> do 
-        y' <- trainForwardOnly net (M.singleton "x" x) "y"
+        [y'] <- trainForwardOnly net (M.singleton "x" x)
         return (y, y')
     liftIO $ print $ take 10 result
 
