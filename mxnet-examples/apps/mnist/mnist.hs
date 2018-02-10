@@ -41,10 +41,10 @@ neural = do
 
 data Param = Param { _param_in :: ArrayF, _param_grad :: ArrayF }
     deriving Show
-type TrainM m = ST.StateT (Maybe (M.HashMap String Param)) m
+type TrainM m = ST.StateT (M.HashMap String Param) m
 
-train :: Monad m => TrainM m r -> m r
-train = flip ST.evalStateT Nothing
+train :: Monad m => M.HashMap String Param -> TrainM m r -> m r
+train param = flip ST.evalStateT param
 
 inferShape :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String [Int])
 inferShape sym known = do
@@ -57,12 +57,13 @@ inferShape sym known = do
     return $ M.fromList $ zip inps inp_shp
 
 -- initialize all parameters, whose _in is sampled by a normal distr (0,1), and _grad is zeros.
-initParam :: SymbolF -> M.HashMap String ArrayF -> IO (M.HashMap String Param)
+initParam :: SymbolF -> M.HashMap String [Int] -> IO (M.HashMap String Param)
 initParam sym dat = do
+    dat <- mapM zeros dat
     inp_with_shp <- inferShape sym dat
-    M.traverseWithKey init_with_random_normal inp_with_shp
+    M.traverseWithKey (init_with_random_normal dat) inp_with_shp
   where
-    init_with_random_normal inp shp = do
+    init_with_random_normal dat inp shp = do
         case M.lookup inp dat of
             Just in_arg -> return $ Param in_arg (A.NDArray nullNDArrayHandle)
             Nothing -> do
@@ -90,58 +91,60 @@ bindParam net args train = do
 -- single step train. Must provide all the placeholders.
 trainStep :: MonadIO m => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
 trainStep net datAndLbl = do
-    uninited <- ST.gets isNothing
-    when uninited (liftIO (initParam net datAndLbl) >>= ST.put . Just)
-    Just params <- ST.get
-    params <- flip M.traverseWithKey params (\k p -> do
+    modifyT $ M.traverseWithKey $ \k p -> do 
         case M.lookup k datAndLbl of
             Just a  -> return $ p {_param_in = a}
-            Nothing -> return p)
+            Nothing -> return p
+    params <- ST.get
     liftIO $ do 
         exec <- bindParam net params True
         checked $ mxExecutorForward (E.getHandle exec) 1
         backward exec
-    params <- flip M.traverseWithKey params $ \ k v -> do
-                if (not $ M.member k datAndLbl) 
-                    then do
-                        new_in <- A.NDArray <$> liftIO (A.sgd_update (A.getHandle $ _param_in v) (A.getHandle $ _param_grad v) 0.01 nil)
-                        return $ v {_param_in = new_in}
-                    else return v
-    ST.put $ Just params
+    modifyT $ M.traverseWithKey $ \ k v -> do
+        if (not $ M.member k datAndLbl) 
+            then do new_in <- A.NDArray <$> liftIO (A.sgd_update (A.getHandle $ _param_in v) (A.getHandle $ _param_grad v) 0.01 nil)
+                    return $ v {_param_in = new_in}
+            else return v
 
 -- forward only. Must provide all the placeholders, setting the data to 'Just ...', and set label to 'Nothing'.
 -- note that the batch size here can be different from that in the training phase.
 trainForwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String (Maybe ArrayF) -> TrainM m [ArrayF]
-trainForwardOnly net dat =
-     ST.get >>= \case
-        Nothing -> throwM NetworkUninitialized
-        Just params -> liftIO $ do
-            shps <- inferShape net (M.map fromJust $ M.filter isJust dat)
-            params <- flip M.traverseWithKey params $ \k p -> do
-                let ishp = shps M.! k
-                case M.lookup k dat of
-                    Just (Just a) -> 
-                        return $ p {_param_in = a}
-                    Just Nothing  -> do
-                        dummy <- zeros ishp
-                        return $ p {_param_in = dummy}
-                    Nothing -> do
-                        (_, pshp) <- ndshape (_param_in p)
-                        when (ishp /= pshp) (throwM $ MismatchedShape k)
-                        return p
-            exec <- bindParam net params False
-            checked $ mxExecutorForward (E.getHandle exec) 0
-            getOutputs exec
+trainForwardOnly net dat = do
+    shps <- liftIO $ inferShape net (M.map fromJust $ M.filter isJust dat)
+    modifyT $ M.traverseWithKey $ \k p -> do
+        let ishp = shps M.! k
+        case M.lookup k dat of
+            Just (Just a) -> 
+                return $ p {_param_in = a}
+            Just Nothing  -> do
+                dummy <- liftIO $ zeros ishp
+                return $ p {_param_in = dummy}
+            Nothing -> do
+                (_, pshp) <- liftIO $ ndshape (_param_in p)
+                when (ishp /= pshp) (throwM $ MismatchedShape k)
+                return p
+    params <- ST.get
+    liftIO $ do
+        exec <- bindParam net params False
+        checked $ mxExecutorForward (E.getHandle exec) 0
+        getOutputs exec
 
 data Exc = NetworkUninitialized | MismatchedShape String
     deriving (Show, Typeable)
 instance Exception Exc
 
+modifyT :: Monad m => (s -> m s) -> ST.StateT s m ()
+modifyT func = do
+    s <- ST.get
+    s <- ST.lift $ func s
+    ST.put s
+
 main :: IO ()
 main = do
   _  <- mxListAllOpNames
   net <- neural
-  runResourceT $ train $ do 
+  params <- initParam net $ M.singleton "x" [32,28,28]
+  runResourceT $ train params $ do 
     liftIO $ putStrLn $ "[Train] "
     ST.forM_ (range 5) $ step net trainingData  
     liftIO $ putStrLn $ "[Test] "
