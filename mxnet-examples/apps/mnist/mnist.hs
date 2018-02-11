@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import MXNet.Core.Base
@@ -14,6 +12,8 @@ import qualified MXNet.Core.Base.Internal.TH.NDArray as A
 import qualified MXNet.Core.Types.Internal as MXI
 import qualified Data.HashMap.Strict as M
 import Data.List (intersperse)
+import Data.Typeable
+import qualified Data.Vector.Storable as SV
 import qualified Control.Monad.State as ST
 import Data.Maybe (isJust, fromJust)
 import Control.Monad (when)
@@ -21,7 +21,6 @@ import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
 import Control.Monad.Trans.Resource
 import Control.Exception.Base
-import Data.Typeable
 
 import Dataset
 
@@ -150,19 +149,30 @@ range = enumFromTo 1
     
 main :: IO ()
 main = do
-  _  <- mxListAllOpNames
-  net <- neural
-  params <- initParam net $ M.singleton "x" [32,28,28]
-  runResourceT $ train params $ do 
-    liftIO $ putStrLn $ "[Train] "
-    ST.forM_ (range 5) $ \ind -> do
-        liftIO $ putStrLn $ "iteration " ++ show ind
-        SR.mapM_ (\(x, y) -> fit net $ M.fromList [("x", x), ("y", y)]) trainingData
-    liftIO $ putStrLn $ "[Test] "
-    result <- SR.toList_ $ flip SR.mapM testingData $ \(x, y) -> do 
-        [y'] <- forwardOnly net (M.fromList [("x", Just x), ("y", Nothing)])
-        return (y, y')
-    liftIO $ print $ take 10 result
+    _  <- mxListAllOpNames
+    net <- neural
+    params <- initParam net $ M.singleton "x" [32,28,28]
+    result <- runResourceT $ train params $ do 
+      liftIO $ putStrLn $ "[Train] "
+      ST.forM_ (range 5) $ \ind -> do
+          liftIO $ putStrLn $ "iteration " ++ show ind
+          SR.mapM_ (\(x, y) -> fit net $ M.fromList [("x", x), ("y", y)]) trainingData
+      liftIO $ putStrLn $ "[Test] "
+      SR.toList_ $ flip SR.mapM testingData $ \(x, y) -> do 
+          [y'] <- forwardOnly net (M.fromList [("x", Just x), ("y", Nothing)])
+          ind1 <- liftIO $ argmax y  >>= items
+          ind2 <- liftIO $ argmax y' >>= items
+          return (ind1, ind2)
+    let (ls,ps) = unzip result
+        ls_unbatched = mconcat ls
+        ps_unbatched = mconcat ps
+        total   = SV.length ls_unbatched
+        correct = SV.length $ SV.filter id $ SV.zipWith (==) ls_unbatched ps_unbatched
+    putStrLn $ "Accuracy: " ++ show correct ++ "/" ++ show total
+  
+  where
+    argmax :: ArrayF -> IO ArrayF
+    argmax ys = A.NDArray <$> A.argmax (A.getHandle ys) (add @"axis" 1 nil)
 
 -- foo = do
 --     _  <- mxListAllOpNames
