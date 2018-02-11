@@ -15,7 +15,7 @@ import qualified MXNet.Core.Types.Internal as MXI
 import qualified Data.HashMap.Strict as M
 import Data.List (intersperse)
 import qualified Control.Monad.State as ST
-import Data.Maybe (isNothing, isJust, fromJust)
+import Data.Maybe (isJust, fromJust)
 import Control.Monad (when)
 import Control.Monad.IO.Class
 import qualified Streaming.Prelude as SR
@@ -58,8 +58,8 @@ inferShape sym known = do
 
 -- initialize all parameters, whose _in is sampled by a normal distr (0,1), and _grad is zeros.
 initParam :: SymbolF -> M.HashMap String [Int] -> IO (M.HashMap String Param)
-initParam sym dat = do
-    dat <- mapM zeros dat
+initParam sym placeholders = do
+    dat <- mapM zeros placeholders
     inp_with_shp <- inferShape sym dat
     M.traverseWithKey (init_with_random_normal dat) inp_with_shp
   where
@@ -74,13 +74,13 @@ initParam sym dat = do
 
 -- bind the symbolic network with actual parameters
 bindParam :: SymbolF -> M.HashMap String Param -> Bool -> IO (Executor Float)
-bindParam net args train = do
+bindParam net args train_ = do
     names <- listInputs net
     exec_handle <- checked $ mxExecutorBind (S.getHandle net) (deviceType device) (deviceId device)
         (fromIntegral (M.size args))
         -- the parameters to bind should be arranged in the same order as the names
         (map (A.getHandle . _param_in)   $ map (args M.!) names)
-        (if train 
+        (if train_ 
             then map (A.getHandle . _param_grad) $ map (args M.!) names
             else replicate (M.size args) MXI.nullNDArrayHandle)
         (replicate (M.size args) 1)
@@ -89,12 +89,18 @@ bindParam net args train = do
     makeExecutor exec_handle
 
 -- single step train. Must provide all the placeholders.
-trainStep :: MonadIO m => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
-trainStep net datAndLbl = do
-    modifyT $ M.traverseWithKey $ \k p -> do 
+fit :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String ArrayF -> TrainM m ()
+fit net datAndLbl = do
+    shps <- liftIO $ inferShape net datAndLbl
+    modifyT $ M.traverseWithKey $ \k p -> do
+        let ishp = shps M.! k
         case M.lookup k datAndLbl of
             Just a  -> return $ p {_param_in = a}
-            Nothing -> return p
+            Nothing -> do
+                (_, pshp1) <- liftIO $ ndshape (_param_in p)
+                (_, pshp2) <- liftIO $ ndshape (_param_grad p)
+                when (ishp /= pshp1 || ishp /= pshp2) (throwM $ MismatchedShape k)
+                return p
     params <- ST.get
     liftIO $ do 
         exec <- bindParam net params True
@@ -108,8 +114,8 @@ trainStep net datAndLbl = do
 
 -- forward only. Must provide all the placeholders, setting the data to 'Just ...', and set label to 'Nothing'.
 -- note that the batch size here can be different from that in the training phase.
-trainForwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String (Maybe ArrayF) -> TrainM m [ArrayF]
-trainForwardOnly net dat = do
+forwardOnly :: (MonadIO m, MonadThrow m) => SymbolF -> M.HashMap String (Maybe ArrayF) -> TrainM m [ArrayF]
+forwardOnly net dat = do
     shps <- liftIO $ inferShape net (M.map fromJust $ M.filter isJust dat)
     modifyT $ M.traverseWithKey $ \k p -> do
         let ishp = shps M.! k
@@ -129,16 +135,19 @@ trainForwardOnly net dat = do
         checked $ mxExecutorForward (E.getHandle exec) 0
         getOutputs exec
 
-data Exc = NetworkUninitialized | MismatchedShape String
+data Exc = MismatchedShape String
     deriving (Show, Typeable)
 instance Exception Exc
 
 modifyT :: Monad m => (s -> m s) -> ST.StateT s m ()
 modifyT func = do
-    s <- ST.get
-    s <- ST.lift $ func s
-    ST.put s
+    s0 <- ST.get
+    s1 <- ST.lift $ func s0
+    ST.put s1
 
+range :: Int -> [Int]
+range = enumFromTo 1
+    
 main :: IO ()
 main = do
   _  <- mxListAllOpNames
@@ -146,19 +155,14 @@ main = do
   params <- initParam net $ M.singleton "x" [32,28,28]
   runResourceT $ train params $ do 
     liftIO $ putStrLn $ "[Train] "
-    ST.forM_ (range 5) $ step net trainingData  
+    ST.forM_ (range 5) $ \ind -> do
+        liftIO $ putStrLn $ "iteration " ++ show ind
+        SR.mapM_ (\(x, y) -> fit net $ M.fromList [("x", x), ("y", y)]) trainingData
     liftIO $ putStrLn $ "[Test] "
     result <- SR.toList_ $ flip SR.mapM testingData $ \(x, y) -> do 
-        [y'] <- trainForwardOnly net (M.fromList [("x", Just x), ("y", Nothing)])
+        [y'] <- forwardOnly net (M.fromList [("x", Just x), ("y", Nothing)])
         return (y, y')
     liftIO $ print $ take 10 result
-
-  where
-    range :: Int -> [Int]
-    range = enumFromTo 1
-    step net dat ind = do
-        liftIO $ putStrLn $ "iteration " ++ show ind
-        SR.mapM_ (\(x, y) -> trainStep net $ M.fromList [("x", x), ("y", y)]) dat
 
 -- foo = do
 --     _  <- mxListAllOpNames
