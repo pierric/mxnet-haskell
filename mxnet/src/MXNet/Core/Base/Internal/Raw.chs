@@ -759,32 +759,32 @@ mxSymbolInferType handle args = do
 -------------------------------------------------------------------------------
 
 -- | Delete the executor.
-{#fun MXExecutorFree as mxExecutorFree
-    { id `ExecutorHandle' -- ^ The executor handle.
-    } -> `Int' #}
+-- {#fun MXExecutorFree as mxExecutorFree
+--     { id `ExecutorHandle' -- ^ The executor handle.
+--     } -> `Int' #}
 
 -- | Print the content of execution plan, used for debug.
 {#fun MXExecutorPrint as mxExecutorPrint
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , alloca- `String' peekString*  -- ^ Pointer to hold the output string of the printing.
     } -> `Int' #}
 
 -- | Executor forward method.
 {#fun MXExecutorForward as mxExecutorForward
-    { id `ExecutorHandle'   -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'   -- ^ The executor handle.
     , `Int'                 -- ^ int value to indicate whether the forward pass is for
                             -- evaluation.
-    } -> `Int' #}
+    } -> `Int' #}   
 
 -- | Excecutor run backward.
 {#fun MXExecutorBackward as mxExecutorBackward
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , id `MXUInt'                   -- ^ Length.
     , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ NDArray handle for heads' gradient.
     } -> `Int' #}
 
 {#fun MXExecutorOutputs as mxExecutorOutputsImpl
-    { id `ExecutorHandle'               -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'               -- ^ The executor handle.
     , alloca- `MXUInt' peek*            -- ^ NDArray vector size.
     , alloca- `Ptr NDArrayHandlePtr' peek*
     } -> `Int' #}
@@ -808,7 +808,7 @@ mxExecutorOutputs handle = do
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
     , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Generate Executor from symbol. This is advanced function, allow specify group2ctx map.
@@ -827,7 +827,7 @@ mxExecutorOutputs handle = do
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
     , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Generate Executor from symbol. This is advanced function, allow specify group2ctx map.
@@ -846,13 +846,13 @@ mxExecutorOutputs handle = do
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
     , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , id `ExecutorHandle'               -- ^ Input executor handle for memory sharing.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , withExecutorHandle* `ExecutorHandle'               -- ^ Input executor handle for memory sharing.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Set a call back to notify the completion of operation.
 {#fun MXExecutorSetMonitorCallback as mxExecutorSetMonitorCallback
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , id `ExecutorMonitorCallback'
     , id `Ptr ()'
     } -> `Int' #}

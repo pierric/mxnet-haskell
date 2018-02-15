@@ -141,15 +141,23 @@ instance Storable AtomicSymbolHandle where
     peek p = fmap AtomicSymbolHandle (peek (castPtr p))
     poke p (AtomicSymbolHandle t) = poke (castPtr p) t
 
-{#pointer ExecutorHandle newtype #}
+{#pointer ExecutorHandle foreign finalizer MXExecutorFree as mxExecutorFree newtype #}
 deriving instance Generic ExecutorHandle
 
+type ExecutorHandlePtr = Ptr ExecutorHandle
+
+newExecutorHandle :: ExecutorHandlePtr -> IO ExecutorHandle
+newExecutorHandle = newForeignPtr mxExecutorFree >=> return . ExecutorHandle
+
+peekExecutorHandle :: Ptr ExecutorHandlePtr -> IO ExecutorHandle
+peekExecutorHandle = peek >=> newExecutorHandle
+
 -- | Handle to an Executor.
-instance Storable ExecutorHandle where
-    sizeOf (ExecutorHandle t) = sizeOf t
-    alignment (ExecutorHandle t) = alignment t
-    peek p = fmap ExecutorHandle (peek (castPtr p))
-    poke p (ExecutorHandle t) = poke (castPtr p) t
+-- instance Storable ExecutorHandle where
+--     sizeOf (ExecutorHandle t) = sizeOf t
+--     alignment (ExecutorHandle t) = alignment t
+--     peek p = fmap ExecutorHandle (peek (castPtr p))
+--     poke p (ExecutorHandle t) = poke (castPtr p) t
 
 -- | Handle a dataiter creator.
 {#pointer DataIterCreator newtype #}
