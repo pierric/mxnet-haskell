@@ -27,14 +27,12 @@ import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.ForeignPtr
 
 import C2HS.C.Extra.Marshal
 
 import Data.Typeable
 import Control.Exception.Base
 
-import Control.Monad ((>=>))
 
 {#import MXNet.Core.Types.Internal.Raw #}
 import MXNet.Core.Base.Internal.TrustPkgs
@@ -347,7 +345,7 @@ mxFuncGetInfo handle = do
     , `Int'
     , withNDArrayHandleArray* `[NDArrayHandle]'
     , id `Ptr CInt'
-    , id `Ptr (Ptr NDArrayHandle)'
+    , id `Ptr (Ptr NDArrayHandlePtr)'
     , `Int'
     , withStringArray* `[String]'
     , withStringArray* `[String]'
@@ -363,24 +361,27 @@ mxImperativeInvoke creator inputs params outputs = do
     let (keys, values) = unzip params
         ninput = length inputs
         nparam = length params
-    (n, p) <- case outputs of
+    case outputs of
         Nothing -> alloca $ \pn ->
             alloca $ \pp -> do
                 poke pn 0
                 poke pp nullPtr
                 checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
-                n' <- fromIntegral <$> peek pn
+                n' <- peek pn
                 p' <- peek pp
-                return (n', p')
+                if n' == 0 
+                    then return []
+                    else do
+                        pa <- peekArray (fromIntegral n') p' 
+                        mapM newNDArrayHandle pa
         Just out -> alloca $ \pn ->
             alloca $ \pp -> do
-                withArray out $ \p' -> do
+                n' <- withNDArrayHandleArray out $ \p' -> do
                     poke pn (fromIntegral $ length out)
                     poke pp p'
                     checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
-                    n' <- fromIntegral <$> peek pn
-                    return (n', p')
-    if n == 0 then return [] else peekArray n p
+                    peek pn
+                return $ take (fromIntegral n') out
     
 -------------------------------------------------------------------------------
 
@@ -785,7 +786,7 @@ mxSymbolInferType handle args = do
 {#fun MXExecutorOutputs as mxExecutorOutputsImpl
     { id `ExecutorHandle'               -- ^ The executor handle.
     , alloca- `MXUInt' peek*            -- ^ NDArray vector size.
-    , alloca- `Ptr NDArrayHandle' peek*
+    , alloca- `Ptr NDArrayHandlePtr' peek*
     } -> `Int' #}
 
 -- | Get executor's head NDArray.
@@ -793,7 +794,7 @@ mxExecutorOutputs :: ExecutorHandle             -- ^ The executor handle.
                   -> IO (Int, [NDArrayHandle])  -- ^ The handles for outputs.
 mxExecutorOutputs handle = do
     (r, c, p) <- mxExecutorOutputsImpl handle
-    handles <- peekArray (fromIntegral c) p
+    handles <- peekArray (fromIntegral c) p >>= mapM newNDArrayHandle
     return (r, handles)
 
 -- | Generate Executor from symbol.
@@ -926,7 +927,7 @@ mxDataIterGetIterInfo creator = do
 -- | Get the handle to the NDArray of underlying data.
 {#fun MXDataIterGetData as mxDataIterGetData
     { id `DataIterHandle'           -- ^ The handle pointer to the data iterator.
-    , alloca- `NDArrayHandle' peek* -- ^ Handle to the underlying data NDArray.
+    , alloca- `NDArrayHandle' peekNDArrayHandle* -- ^ Handle to the underlying data NDArray.
     } -> `Int' #}
 
 #ifdef mingw32_HOST_OS
@@ -991,7 +992,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     } -> `Int' #}
 
 -- | Push a list of (key,value) pairs to kvstore.
@@ -999,7 +1000,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     , `Int'                         -- ^ The priority of the action.
     } -> `Int' #}
 
@@ -1008,7 +1009,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     , `Int'                         -- ^ The priority of the action.
     } -> `Int' #}
 
@@ -1153,8 +1154,8 @@ mxKVStoreRunServer = undefined
     , id `MXUInt'                   -- ^ Number of outputs.
     , withStringArray* `[String]'   -- ^ Input names.
     , withStringArray* `[String]'   -- ^ Output names.
-    , withArray* `[NDArrayHandle]'  -- ^ Inputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Outputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Inputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Outputs.
     , id `Ptr CChar'                -- ^ Kernel.
     , alloca- `RtcHandle' peek*     -- ^ The result RTC handle.
     } -> `Int' #}
@@ -1164,8 +1165,8 @@ mxKVStoreRunServer = undefined
     { id `RtcHandle'                -- ^ Handle.
     , id `MXUInt'                   -- ^ Number of inputs.
     , id `MXUInt'                   -- ^ Number of outputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Inputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Outputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Inputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Outputs.
     , id `MXUInt'                   -- ^ Grid dim x
     , id `MXUInt'                   -- ^ Grid dim y
     , id `MXUInt'                   -- ^ Grid dim z

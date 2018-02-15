@@ -40,6 +40,7 @@ module MXNet.Core.Types.Internal
 
 import MXNet.Core.Types.Internal.Raw
 import Foreign.Ptr (nullPtr)
+import Foreign.ForeignPtr (newForeignPtr_)
 
-nullNDArrayHandle :: NDArrayHandlePtr
-nullNDArrayHandle = nullPtr
+nullNDArrayHandle :: IO NDArrayHandle
+nullNDArrayHandle = NDArrayHandle <$> newForeignPtr_ nullPtr
