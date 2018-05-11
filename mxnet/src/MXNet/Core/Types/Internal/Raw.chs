@@ -7,11 +7,6 @@
 --
 -- Collect data type defintions into a single raw binding module to avoid redefinitions.
 --
--- #if __GLASGOW_HASKELL__ >= 709
--- {-# LANGUAGE Safe #-}
--- #elif __GLASGOW_HASKELL__ >= 701
--- {-# LANGUAGE Trustworthy #-}
--- #endif
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -25,7 +20,6 @@ import Foreign.ForeignPtr
 import Foreign.ForeignPtr.Unsafe
 import Foreign.Marshal.Array (withArray)
 import GHC.Generics
-
 import Control.Monad ((>=>))
 
 #include <nnvm/c_api.h>
@@ -94,7 +88,6 @@ instance Storable GraphHandle where
 ---------------------------------------------------------------------}
 
 -- | Handle to NDArray.
--- {#pointer NDArrayHandle newtype #}
 {#pointer NDArrayHandle foreign finalizer MXNDArrayFree as mxNDArrayFree newtype #}
 deriving instance Generic NDArrayHandle
 type NDArrayHandlePtr = Ptr NDArrayHandle
@@ -112,12 +105,6 @@ withNDArrayHandleArray array io = do
     mapM_ (touchForeignPtr . unNDArrayHandle) array
     return r
 
--- instance Storable NDArrayHandle where
---     sizeOf (NDArrayHandle t) = sizeOf t
---     alignment (NDArrayHandle t) = alignment t
---     peek p = fmap NDArrayHandle (peek (castPtr p))
---     poke p (NDArrayHandle t) = poke (castPtr p) t
-
 -- | Handle to a mxnet narray function that changes NDArray.
 {#pointer FunctionHandle newtype #}
 deriving instance Generic FunctionHandle
@@ -130,6 +117,7 @@ instance Storable FunctionHandle where
 
 -- | Handle to a function that takes param and creates symbol.
 type AtomicSymbolCreator = OpHandle
+deriving instance Generic AtomicSymbolHandle
 
 -- | Handle to a AtomicSymbol.
 {#pointer AtomicSymbolHandle newtype #}
@@ -151,13 +139,6 @@ newExecutorHandle = newForeignPtr mxExecutorFree >=> return . ExecutorHandle
 
 peekExecutorHandle :: Ptr ExecutorHandlePtr -> IO ExecutorHandle
 peekExecutorHandle = peek >=> newExecutorHandle
-
--- | Handle to an Executor.
--- instance Storable ExecutorHandle where
---     sizeOf (ExecutorHandle t) = sizeOf t
---     alignment (ExecutorHandle t) = alignment t
---     peek p = fmap ExecutorHandle (peek (castPtr p))
---     poke p (ExecutorHandle t) = poke (castPtr p) t
 
 -- | Handle a dataiter creator.
 {#pointer DataIterCreator newtype #}

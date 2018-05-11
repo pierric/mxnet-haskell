@@ -72,7 +72,7 @@ makeNDArray sh ctx ds = do
     V.unsafeWith ds $ \p -> do
         let len = fromIntegral (V.length ds)
         void $ mxNDArraySyncCopyFromCPU handle (castPtr p) len
-    return $ NDArray handle
+        return $ NDArray handle
 
 -- | Get the shape of given NDArray.
 ndshape :: DType a

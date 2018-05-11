@@ -7,18 +7,12 @@
 --
 -- Direct C FFI bindings for <mxnet/c_api.h>.
 --
--- #if __GLASGOW_HASKELL__ >= 709
--- {-# LANGUAGE Safe #-}
--- #elif __GLASGOW_HASKELL__ >= 701
--- {-# LANGUAGE Trustworthy #-}
--- #endif
 #if __GLASGOW_HASKELL__ >= 801
 {-# LANGUAGE Strict #-}
 #endif
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
-
 
 module MXNet.Core.Base.Internal.Raw where
 
@@ -33,9 +27,8 @@ import C2HS.C.Extra.Marshal
 import Data.Typeable
 import Control.Exception.Base
 
-
 {#import MXNet.Core.Types.Internal.Raw #}
-import MXNet.Core.Base.Internal.TrustPkgs
+import Data.Tuple.Ops
 
 #include <mxnet/c_api.h>
 
@@ -254,7 +247,7 @@ mxNDArrayGetShape handle = do
 
 -- | Get the context of the NDArray.
 {#fun MXNDArrayGetContext as mxNDArrayGetContext
-    { withNDArrayHandle* `NDArrayHandle'          -- ^ The NDArray handle.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The NDArray handle.
     , alloca- `Int' peekIntegral*
     , alloca- `Int' peekIntegral*
     } -> `Int' -- ^ The device type and device id.
@@ -382,7 +375,7 @@ mxImperativeInvoke creator inputs params outputs = do
                     checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
                     peek pn
                 return $ take (fromIntegral n') out
-    
+
 -------------------------------------------------------------------------------
 
 {#fun MXListAllOpNames as mxListAllOpNamesImpl
@@ -705,7 +698,7 @@ mxSymbolInferShapePartial
     -> [String]                              -- ^ Keys of keyword arguments, optional.
     -> [Int]                             -- ^ The head pointer of the rows in CSR.
     -> [Int]                             -- ^ The content of the CSR.
-    -> IO ([[Int]], [[Int]], [[Int]])  -- ^ Return the in, out and auxiliary array's
+    -> IO ([[Int]], [[Int]], [[Int]])    -- ^ Return the in, out and auxiliary array's
                                             -- shape size, ndim and data (array of pointers
                                             -- to head of the input shape), and whether
                                             -- infer shape completes or more information is
@@ -745,7 +738,7 @@ mxSymbolInferShapePartial sym keys ind shapedata = do
 -- | Infer type of unknown input types given the known one.
 mxSymbolInferType :: SymbolHandle                   -- ^ Symbol handle.
                   -> [String]                       -- ^ Input arguments.
-                  -> IO ([Int], [Int], [Int])  -- ^ Return arg_types, out_types and aux_types.
+                  -> IO ([Int], [Int], [Int])       -- ^ Return arg_types, out_types and aux_types.
 mxSymbolInferType handle args = do
     let nargs = fromIntegral (length args)
         csr = []
@@ -765,7 +758,7 @@ mxSymbolInferType handle args = do
 
 -- | Print the content of execution plan, used for debug.
 {#fun MXExecutorPrint as mxExecutorPrint
-    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'          -- ^ The executor handle.
     , alloca- `String' peekString*  -- ^ Pointer to hold the output string of the printing.
     } -> `Int' #}
 
@@ -778,24 +771,24 @@ mxSymbolInferType handle args = do
 
 -- | Excecutor run backward.
 {#fun MXExecutorBackward as mxExecutorBackward
-    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
-    , id `MXUInt'                   -- ^ Length.
-    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ NDArray handle for heads' gradient.
+    { withExecutorHandle* `ExecutorHandle'          -- ^ The executor handle.
+    , id `MXUInt'                                   -- ^ Length.
+    , withNDArrayHandleArray* `[NDArrayHandle]'     -- ^ NDArray handle for heads' gradient.
     } -> `Int' #}
 
 {#fun MXExecutorOutputs as mxExecutorOutputsImpl
-    { withExecutorHandle* `ExecutorHandle'               -- ^ The executor handle.
-    , alloca- `MXUInt' peek*            -- ^ NDArray vector size.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
+    , alloca- `MXUInt' peek*                         -- ^ NDArray vector size.
     , alloca- `Ptr NDArrayHandlePtr' peek*
     } -> `Int' #}
 
 -- | Get executor's head NDArray.
 mxExecutorOutputs :: ExecutorHandle             -- ^ The executor handle.
-                  -> IO (Int, [NDArrayHandle])  -- ^ The handles for outputs.
+                  -> IO ([NDArrayHandle])       -- ^ The handles for outputs.
 mxExecutorOutputs handle = do
-    (r, c, p) <- mxExecutorOutputsImpl handle
+    (c, p) <- checked $ mxExecutorOutputsImpl handle
     handles <- peekArray (fromIntegral c) p >>= mapM newNDArrayHandle
-    return (r, handles)
+    return handles
 
 -- | Generate Executor from symbol.
 {#fun MXExecutorBind as mxExecutorBind
