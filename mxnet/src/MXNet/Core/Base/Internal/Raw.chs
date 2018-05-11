@@ -7,11 +7,11 @@
 --
 -- Direct C FFI bindings for <mxnet/c_api.h>.
 --
-#if __GLASGOW_HASKELL__ >= 709
-{-# LANGUAGE Safe #-}
-#elif __GLASGOW_HASKELL__ >= 701
-{-# LANGUAGE Trustworthy #-}
-#endif
+-- #if __GLASGOW_HASKELL__ >= 709
+-- {-# LANGUAGE Safe #-}
+-- #elif __GLASGOW_HASKELL__ >= 701
+-- {-# LANGUAGE Trustworthy #-}
+-- #endif
 #if __GLASGOW_HASKELL__ >= 801
 {-# LANGUAGE Strict #-}
 #endif
@@ -32,6 +32,7 @@ import C2HS.C.Extra.Marshal
 
 import Data.Typeable
 import Control.Exception.Base
+
 
 {#import MXNet.Core.Types.Internal.Raw #}
 import MXNet.Core.Base.Internal.TrustPkgs
@@ -93,7 +94,7 @@ checked call = do
 
 -- | Create a NDArray handle that is not initialized.
 {#fun MXNDArrayCreateNone as mxNDArrayCreateNone
-    { alloca- `NDArrayHandle' peek*
+    { alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The returned NDArrayHandle.
     #}
 
@@ -104,7 +105,7 @@ checked call = do
     , `Int'                         -- ^ Device type, specify device we want to take.
     , `Int'                         -- ^ The device id of the specific device.
     , `Int'                         -- ^ Whether to delay allocation until.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The returing handle.
     #}
 
@@ -116,7 +117,7 @@ checked call = do
     , `Int'                         -- ^ The device id of the specific device.
     , `Int'                         -- ^ Whether to delay allocation until.
     , `Int'                         -- ^ Data type of created array.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The returing handle.
     #}
 
@@ -124,28 +125,27 @@ checked call = do
 {#fun MXNDArrayLoadFromRawBytes as mxNDArrayLoadFromRawBytes
     { id `Ptr ()'                   -- ^ The head of the raw bytes.
     , `CSize'                       -- ^ Size of the raw bytes.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' #}
 
 -- | Save the NDArray into raw bytes.
 {#fun MXNDArraySaveRawBytes as mxNDArraySaveRawBytes
-    { id `NDArrayHandle'        -- ^ The NDArray handle.
+    { withNDArrayHandle* `NDArrayHandle'        -- ^ The NDArray handle.
     , alloca- `CSize' peek*     -- ^ Size of the raw bytes.
     , alloca- `Ptr CChar' peek* -- ^ The head of returning memory bytes.
     } -> `Int' #}
 
--- | Save list of narray into the file.
 {#fun MXNDArraySave as mxNDArraySave
     { `String'                      -- ^ Name of the file.
     , id `MXUInt'                   -- ^ Number of arguments to save.
-    , withArray* `[NDArrayHandle]'  -- ^ the array of NDArrayHandles to be saved.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ the array of NDArrayHandles to be saved.
     , withStringArray* `[String]'   -- ^ names of the NDArrays to save.
     } -> `Int' #}
 
 {#fun MXNDArrayLoad as mxNDArrayLoadImpl
     { `String'                      -- ^ Name of the file.
     , alloca- `MXUInt' peek*
-    , alloca- `Ptr NDArrayHandle' peek*
+    , alloca- `Ptr NDArrayHandlePtr' peek*
     , alloca- `MXUInt' peek*
     , alloca- `Ptr (Ptr CChar)' peek*
     } -> `Int' #}
@@ -158,7 +158,7 @@ mxNDArrayLoad :: String                         -- ^ Name of the file.
                                                 -- returned names.
 mxNDArrayLoad fname = do
     (c1, p1, c2, p2) <- checked $ mxNDArrayLoadImpl fname
-    handles <- peekArray (fromIntegral c1) p1
+    handles <- peekArray (fromIntegral c1) p1 >>= mapM newNDArrayHandle
     names <- peekStringArray c2 p2
     return (c1, handles, c2, names)
 
@@ -166,26 +166,26 @@ mxNDArrayLoad fname = do
 -- This is useful to copy data from existing memory region that are
 -- not wrapped by NDArray (thus dependency not being tracked).
 {#fun MXNDArraySyncCopyFromCPU as mxNDArraySyncCopyFromCPU
-    { id `NDArrayHandle'    -- ^ The NDArrayHandle.
+    { withNDArrayHandle* `NDArrayHandle'    -- ^ The NDArrayHandle.
     , id `Ptr ()'           -- ^ The raw data source to copy from.
     , `CSize'               -- ^ The memory size want to copy from.
     } -> `Int' #}
 
 -- | Perform a synchronize copy to a continugous CPU memory region.
 {#fun MXNDArraySyncCopyToCPU as mxNDArraySyncCopyToCPU
-    { id `NDArrayHandle'    -- ^ The NDArrayHandle.
+    { withNDArrayHandle* `NDArrayHandle'    -- ^ The NDArrayHandle.
     , id `Ptr ()'           -- ^ The raw data source to copy into.
     , `CSize'               -- ^ The memory size want to copy into.
     } -> `Int' #}
 
 -- | Wait until all the pending writes with respect NDArray are finished.
 {#fun MXNDArrayWaitToRead as mxNDArrayWaitToRead
-    { id `NDArrayHandle'
+    { withNDArrayHandle* `NDArrayHandle'
     } -> `Int' #}
 
 -- | Wait until all the pending read/write with respect NDArray are finished.
 {#fun MXNDArrayWaitToWrite as mxNDArrayWaitToWrite
-    { id `NDArrayHandle'
+    { withNDArrayHandle* `NDArrayHandle'
     } -> `Int' #}
 
 -- | Wait until all delayed operations in the system is completed.
@@ -194,38 +194,38 @@ mxNDArrayLoad fname = do
     } -> `Int' #}
 
 -- | Free the narray handle.
-{#fun MXNDArrayFree as mxNDArrayFree
-    { id `NDArrayHandle'
-    } -> `Int' #}
+-- {#fun MXNDArrayFree as mxNDArrayFree
+--     { id `NDArrayHandle'
+--     } -> `Int' #}
 
 -- | Slice the NDArray along axis 0.
 {#fun MXNDArraySlice as mxNDArraySlice
-    { id `NDArrayHandle'            -- ^ The handle to the NDArray.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The handle to the NDArray.
     , id `MXUInt'                   -- ^ The beginning index of slice.
     , id `MXUInt'                   -- ^ The ending index of slice.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The NDArrayHandle of sliced NDArray.
     #}
 
 -- | Index the NDArray along axis 0.
 {#fun MXNDArrayAt as mxNDArrayAt
-    { id `NDArrayHandle'            -- ^ The handle to the NDArray.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The handle to the NDArray.
     , id `MXUInt'                   -- ^ The index.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The NDArrayHandle of output NDArray.
     #}
 
 -- | Reshape the NDArray.
 {#fun MXNDArrayReshape as mxNDArrayReshape
-    { id `NDArrayHandle'            -- ^ The handle to the NDArray.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The handle to the NDArray.
     , `Int'                         -- ^ Number of dimensions of new shape.
     , withIntegralArray* `[Int]'    -- ^ New sizes of every dimension.
-    , alloca- `NDArrayHandle' peek*
+    , alloca- `NDArrayHandle' peekNDArrayHandle*
     } -> `Int' -- ^ The new shape data and the NDArrayHandle of reshaped NDArray.
     #}
 
 {#fun MXNDArrayGetShape as mxNDArrayGetShapeImpl
-    { id `NDArrayHandle'
+    { withNDArrayHandle* `NDArrayHandle'
     , alloca- `MXUInt' peek*
     , alloca- `Ptr MXUInt' peek*
     } -> `Int' #}
@@ -240,21 +240,21 @@ mxNDArrayGetShape handle = do
 
 -- | Get the content of the data in NDArray.
 {#fun MXNDArrayGetData as mxNDArrayGetData
-    { id `NDArrayHandle'            -- ^ The NDArray handle.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The NDArray handle.
     , alloca- `Ptr ()' peek*
     } -> `Int' -- ^ Pointer holder to get pointer of data.
     #}
 
 -- | Get the type of the data in NDArray
 {#fun MXNDArrayGetDType as mxNDArrayGetDType
-    { id `NDArrayHandle'            -- ^ The NDArray handle.
+    { withNDArrayHandle* `NDArrayHandle'            -- ^ The NDArray handle.
     , alloca- `Int' peekIntegral*
     } -> `Int' -- ^ The type of data in this NDArray handle.
     #}
 
 -- | Get the context of the NDArray.
 {#fun MXNDArrayGetContext as mxNDArrayGetContext
-    { id `NDArrayHandle'          -- ^ The NDArray handle.
+    { withNDArrayHandle* `NDArrayHandle'          -- ^ The NDArray handle.
     , alloca- `Int' peekIntegral*
     , alloca- `Int' peekIntegral*
     } -> `Int' -- ^ The device type and device id.
@@ -323,18 +323,18 @@ mxFuncGetInfo handle = do
 -- @fun@ function.
 {#fun MXFuncInvoke as mxFuncInvoke
     { id `FunctionHandle'           -- ^ The function to invoke.
-    , withArray* `[NDArrayHandle]'  -- ^ The normal NDArrays arguments.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The normal NDArrays arguments.
     , withArray* `[MXFloat]'        -- ^ The scalar arguments.
-    , withArray* `[NDArrayHandle]'  -- ^ The mutable NDArrays arguments.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The mutable NDArrays arguments.
     } -> `Int' #}
 
 -- | Invoke a function, the array size of passed in arguments must match the values in the
 -- @fun@ function.
 {#fun MXFuncInvokeEx as mxFuncInvokeEx
     { id `FunctionHandle'           -- ^ The function to invoke.
-    , withArray* `[NDArrayHandle]'  -- ^ The normal NDArrays arguments.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The normal NDArrays arguments.
     , withArray* `[MXFloat]'        -- ^ The scalar arguments.
-    , withArray* `[NDArrayHandle]'  -- ^ The mutable NDArrays arguments.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The mutable NDArrays arguments.
     , `Int'                         -- ^ Number of keyword parameters.
     , withStringArray* `[String]'   -- ^ Keys for keyword parameters.
     , withStringArray* `[String]'   -- ^ Values for keyword parameters.
@@ -343,9 +343,9 @@ mxFuncGetInfo handle = do
 {#fun MXImperativeInvoke as mxImperativeInvokeImpl
     { id `AtomicSymbolCreator'      -- ^ Creator of the OP.
     , `Int'
-    , withArray* `[NDArrayHandle]'
+    , withNDArrayHandleArray* `[NDArrayHandle]'
     , id `Ptr CInt'
-    , id `Ptr (Ptr NDArrayHandle)'
+    , id `Ptr (Ptr NDArrayHandlePtr)'
     , `Int'
     , withStringArray* `[String]'
     , withStringArray* `[String]'
@@ -361,24 +361,27 @@ mxImperativeInvoke creator inputs params outputs = do
     let (keys, values) = unzip params
         ninput = length inputs
         nparam = length params
-    (n, p) <- case outputs of
+    case outputs of
         Nothing -> alloca $ \pn ->
             alloca $ \pp -> do
                 poke pn 0
                 poke pp nullPtr
                 checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
-                n' <- fromIntegral <$> peek pn
+                n' <- peek pn
                 p' <- peek pp
-                return (n', p')
+                if n' == 0 
+                    then return []
+                    else do
+                        pa <- peekArray (fromIntegral n') p' 
+                        mapM newNDArrayHandle pa
         Just out -> alloca $ \pn ->
             alloca $ \pp -> do
-                withArray out $ \p' -> do
+                n' <- withNDArrayHandleArray out $ \p' -> do
                     poke pn (fromIntegral $ length out)
                     poke pp p'
                     checked $ mxImperativeInvokeImpl creator ninput inputs pn pp nparam keys values
-                    n' <- fromIntegral <$> peek pn
-                    return (n', p')
-    if n == 0 then return [] else peekArray n p
+                    peek pn
+                return $ take (fromIntegral n') out
     
 -------------------------------------------------------------------------------
 
@@ -756,34 +759,34 @@ mxSymbolInferType handle args = do
 -------------------------------------------------------------------------------
 
 -- | Delete the executor.
-{#fun MXExecutorFree as mxExecutorFree
-    { id `ExecutorHandle' -- ^ The executor handle.
-    } -> `Int' #}
+-- {#fun MXExecutorFree as mxExecutorFree
+--     { id `ExecutorHandle' -- ^ The executor handle.
+--     } -> `Int' #}
 
 -- | Print the content of execution plan, used for debug.
 {#fun MXExecutorPrint as mxExecutorPrint
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , alloca- `String' peekString*  -- ^ Pointer to hold the output string of the printing.
     } -> `Int' #}
 
 -- | Executor forward method.
 {#fun MXExecutorForward as mxExecutorForward
-    { id `ExecutorHandle'   -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'   -- ^ The executor handle.
     , `Int'                 -- ^ int value to indicate whether the forward pass is for
                             -- evaluation.
-    } -> `Int' #}
+    } -> `Int' #}   
 
 -- | Excecutor run backward.
 {#fun MXExecutorBackward as mxExecutorBackward
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , id `MXUInt'                   -- ^ Length.
-    , withArray* `[NDArrayHandle]'  -- ^ NDArray handle for heads' gradient.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ NDArray handle for heads' gradient.
     } -> `Int' #}
 
 {#fun MXExecutorOutputs as mxExecutorOutputsImpl
-    { id `ExecutorHandle'               -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'               -- ^ The executor handle.
     , alloca- `MXUInt' peek*            -- ^ NDArray vector size.
-    , alloca- `Ptr NDArrayHandle' peek*
+    , alloca- `Ptr NDArrayHandlePtr' peek*
     } -> `Int' #}
 
 -- | Get executor's head NDArray.
@@ -791,7 +794,7 @@ mxExecutorOutputs :: ExecutorHandle             -- ^ The executor handle.
                   -> IO (Int, [NDArrayHandle])  -- ^ The handles for outputs.
 mxExecutorOutputs handle = do
     (r, c, p) <- mxExecutorOutputsImpl handle
-    handles <- peekArray (fromIntegral c) p
+    handles <- peekArray (fromIntegral c) p >>= mapM newNDArrayHandle
     return (r, handles)
 
 -- | Generate Executor from symbol.
@@ -800,12 +803,12 @@ mxExecutorOutputs handle = do
     , `Int'                             -- ^ Device type.
     , `Int'                             -- ^ Device id.
     , id `MXUInt'                       -- ^ Length of arrays in arguments.
-    , withArray* `[NDArrayHandle]'      -- ^ In array.
-    , withArray* `[NDArrayHandle]'      -- ^ Grads handle array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ In array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Grads handle array.
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
-    , withArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Generate Executor from symbol. This is advanced function, allow specify group2ctx map.
@@ -819,12 +822,12 @@ mxExecutorOutputs handle = do
     , withIntegralArray* `[Int]'        -- ^ Device type of group2ctx map.
     , withIntegralArray* `[Int]'        -- ^ Device id of group2ctx map.
     , id `MXUInt'                       -- ^ Length of arrays in arguments.
-    , withArray* `[NDArrayHandle]'      -- ^ In array.
-    , withArray* `[NDArrayHandle]'      -- ^ Grads handle array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ In array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Grads handle array.
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
-    , withArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Generate Executor from symbol. This is advanced function, allow specify group2ctx map.
@@ -838,18 +841,18 @@ mxExecutorOutputs handle = do
     , withIntegralArray* `[Int]'        -- ^ Device type of group2ctx map.
     , withIntegralArray* `[Int]'        -- ^ Device id of group2ctx map.
     , id `MXUInt'                       -- ^ Length of arrays in arguments.
-    , withArray* `[NDArrayHandle]'      -- ^ In array.
-    , withArray* `[NDArrayHandle]'      -- ^ Grads handle array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ In array.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Grads handle array.
     , withArray* `[MXUInt]'             -- ^ Grad req array.
     , id `MXUInt'                       -- ^ Length of auxiliary states.
-    , withArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
-    , id `ExecutorHandle'               -- ^ Input executor handle for memory sharing.
-    , alloca- `ExecutorHandle' peek*    -- ^ Output executor handle.
+    , withNDArrayHandleArray* `[NDArrayHandle]'      -- ^ Auxiliary states array.
+    , withExecutorHandle* `ExecutorHandle'               -- ^ Input executor handle for memory sharing.
+    , alloca- `ExecutorHandle' peekExecutorHandle*    -- ^ Output executor handle.
     } -> `Int' #}
 
 -- | Set a call back to notify the completion of operation.
 {#fun MXExecutorSetMonitorCallback as mxExecutorSetMonitorCallback
-    { id `ExecutorHandle'           -- ^ The executor handle.
+    { withExecutorHandle* `ExecutorHandle'           -- ^ The executor handle.
     , id `ExecutorMonitorCallback'
     , id `Ptr ()'
     } -> `Int' #}
@@ -924,7 +927,7 @@ mxDataIterGetIterInfo creator = do
 -- | Get the handle to the NDArray of underlying data.
 {#fun MXDataIterGetData as mxDataIterGetData
     { id `DataIterHandle'           -- ^ The handle pointer to the data iterator.
-    , alloca- `NDArrayHandle' peek* -- ^ Handle to the underlying data NDArray.
+    , alloca- `NDArrayHandle' peekNDArrayHandle* -- ^ Handle to the underlying data NDArray.
     } -> `Int' #}
 
 #ifdef mingw32_HOST_OS
@@ -961,7 +964,7 @@ mxDataIterGetIndex creator = do
 -- | Get the handle to the NDArray of underlying label.
 {#fun MXDataIterGetLabel as mxDataIterGetLabel
     { id `DataIterHandle'           -- ^ The handle pointer to the data iterator.
-    , alloca- `NDArrayHandle' peek* -- ^ The handle to underlying label NDArray.
+    , alloca- `NDArrayHandle' peekNDArrayHandle* -- ^ The handle to underlying label NDArray.
     } -> `Int' #}
 
 -------------------------------------------------------------------------------
@@ -989,7 +992,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     } -> `Int' #}
 
 -- | Push a list of (key,value) pairs to kvstore.
@@ -997,7 +1000,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     , `Int'                         -- ^ The priority of the action.
     } -> `Int' #}
 
@@ -1006,7 +1009,7 @@ mxDataIterGetIndex creator = do
     { id `KVStoreHandle'            -- ^ Handle to the kvstore.
     , id `MXUInt'                   -- ^ The number of key-value pairs.
     , withIntegralArray* `[Int]'    -- ^ The list of keys.
-    , withArray* `[NDArrayHandle]'  -- ^ The list of values.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ The list of values.
     , `Int'                         -- ^ The priority of the action.
     } -> `Int' #}
 
@@ -1151,8 +1154,8 @@ mxKVStoreRunServer = undefined
     , id `MXUInt'                   -- ^ Number of outputs.
     , withStringArray* `[String]'   -- ^ Input names.
     , withStringArray* `[String]'   -- ^ Output names.
-    , withArray* `[NDArrayHandle]'  -- ^ Inputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Outputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Inputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Outputs.
     , id `Ptr CChar'                -- ^ Kernel.
     , alloca- `RtcHandle' peek*     -- ^ The result RTC handle.
     } -> `Int' #}
@@ -1162,8 +1165,8 @@ mxKVStoreRunServer = undefined
     { id `RtcHandle'                -- ^ Handle.
     , id `MXUInt'                   -- ^ Number of inputs.
     , id `MXUInt'                   -- ^ Number of outputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Inputs.
-    , withArray* `[NDArrayHandle]'  -- ^ Outputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Inputs.
+    , withNDArrayHandleArray* `[NDArrayHandle]'  -- ^ Outputs.
     , id `MXUInt'                   -- ^ Grid dim x
     , id `MXUInt'                   -- ^ Grid dim y
     , id `MXUInt'                   -- ^ Grid dim z

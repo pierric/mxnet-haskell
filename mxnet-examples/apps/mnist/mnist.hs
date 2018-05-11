@@ -64,7 +64,9 @@ initParam sym placeholders = do
   where
     init_with_random_normal dat inp shp = do
         case M.lookup inp dat of
-            Just in_arg -> return $ Param in_arg (A.NDArray nullNDArrayHandle)
+            Just in_arg -> do
+                nullarg <- A.NDArray <$> nullNDArrayHandle
+                return $ Param in_arg nullarg
             Nothing -> do
                 in_handle <- A.random_normal (add @"loc" 0 $ add @"scale" 1 $ add @"shape" (formatShape shp) nil)
                 gra <- zeros shp
@@ -75,13 +77,14 @@ initParam sym placeholders = do
 bindParam :: SymbolF -> M.HashMap String Param -> Bool -> IO (Executor Float)
 bindParam net args train_ = do
     names <- listInputs net
+    nullarg <- nullNDArrayHandle
     exec_handle <- checked $ mxExecutorBind (S.getHandle net) (deviceType device) (deviceId device)
         (fromIntegral (M.size args))
         -- the parameters to bind should be arranged in the same order as the names
         (map (A.getHandle . _param_in)   $ map (args M.!) names)
         (if train_ 
             then map (A.getHandle . _param_grad) $ map (args M.!) names
-            else replicate (M.size args) MXI.nullNDArrayHandle)
+            else replicate (M.size args) nullarg)
         (replicate (M.size args) 1)
         0 []
     

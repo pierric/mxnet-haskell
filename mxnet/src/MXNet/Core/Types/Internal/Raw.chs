@@ -7,11 +7,11 @@
 --
 -- Collect data type defintions into a single raw binding module to avoid redefinitions.
 --
-#if __GLASGOW_HASKELL__ >= 709
-{-# LANGUAGE Safe #-}
-#elif __GLASGOW_HASKELL__ >= 701
-{-# LANGUAGE Trustworthy #-}
-#endif
+-- #if __GLASGOW_HASKELL__ >= 709
+-- {-# LANGUAGE Safe #-}
+-- #elif __GLASGOW_HASKELL__ >= 701
+-- {-# LANGUAGE Trustworthy #-}
+-- #endif
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -21,7 +21,12 @@ module MXNet.Core.Types.Internal.Raw where
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
+import Foreign.ForeignPtr
+import Foreign.ForeignPtr.Unsafe
+import Foreign.Marshal.Array (withArray)
 import GHC.Generics
+
+import Control.Monad ((>=>))
 
 #include <nnvm/c_api.h>
 #include <mxnet/c_api.h>
@@ -89,14 +94,29 @@ instance Storable GraphHandle where
 ---------------------------------------------------------------------}
 
 -- | Handle to NDArray.
-{#pointer NDArrayHandle newtype #}
+-- {#pointer NDArrayHandle newtype #}
+{#pointer NDArrayHandle foreign finalizer MXNDArrayFree as mxNDArrayFree newtype #}
 deriving instance Generic NDArrayHandle
+type NDArrayHandlePtr = Ptr NDArrayHandle
 
-instance Storable NDArrayHandle where
-    sizeOf (NDArrayHandle t) = sizeOf t
-    alignment (NDArrayHandle t) = alignment t
-    peek p = fmap NDArrayHandle (peek (castPtr p))
-    poke p (NDArrayHandle t) = poke (castPtr p) t
+newNDArrayHandle :: NDArrayHandlePtr -> IO NDArrayHandle
+newNDArrayHandle = newForeignPtr mxNDArrayFree >=> return . NDArrayHandle
+
+peekNDArrayHandle :: Ptr NDArrayHandlePtr -> IO NDArrayHandle
+peekNDArrayHandle = peek >=> newNDArrayHandle
+
+withNDArrayHandleArray :: [NDArrayHandle] -> (Ptr NDArrayHandlePtr -> IO r) -> IO r
+withNDArrayHandleArray array io = do
+    let unNDArrayHandle (NDArrayHandle fptr) = fptr
+    r <- withArray (map (unsafeForeignPtrToPtr . unNDArrayHandle) array) io
+    mapM_ (touchForeignPtr . unNDArrayHandle) array
+    return r
+
+-- instance Storable NDArrayHandle where
+--     sizeOf (NDArrayHandle t) = sizeOf t
+--     alignment (NDArrayHandle t) = alignment t
+--     peek p = fmap NDArrayHandle (peek (castPtr p))
+--     poke p (NDArrayHandle t) = poke (castPtr p) t
 
 -- | Handle to a mxnet narray function that changes NDArray.
 {#pointer FunctionHandle newtype #}
@@ -121,15 +141,23 @@ instance Storable AtomicSymbolHandle where
     peek p = fmap AtomicSymbolHandle (peek (castPtr p))
     poke p (AtomicSymbolHandle t) = poke (castPtr p) t
 
-{#pointer ExecutorHandle newtype #}
+{#pointer ExecutorHandle foreign finalizer MXExecutorFree as mxExecutorFree newtype #}
 deriving instance Generic ExecutorHandle
 
+type ExecutorHandlePtr = Ptr ExecutorHandle
+
+newExecutorHandle :: ExecutorHandlePtr -> IO ExecutorHandle
+newExecutorHandle = newForeignPtr mxExecutorFree >=> return . ExecutorHandle
+
+peekExecutorHandle :: Ptr ExecutorHandlePtr -> IO ExecutorHandle
+peekExecutorHandle = peek >=> newExecutorHandle
+
 -- | Handle to an Executor.
-instance Storable ExecutorHandle where
-    sizeOf (ExecutorHandle t) = sizeOf t
-    alignment (ExecutorHandle t) = alignment t
-    peek p = fmap ExecutorHandle (peek (castPtr p))
-    poke p (ExecutorHandle t) = poke (castPtr p) t
+-- instance Storable ExecutorHandle where
+--     sizeOf (ExecutorHandle t) = sizeOf t
+--     alignment (ExecutorHandle t) = alignment t
+--     peek p = fmap ExecutorHandle (peek (castPtr p))
+--     poke p (ExecutorHandle t) = poke (castPtr p) t
 
 -- | Handle a dataiter creator.
 {#pointer DataIterCreator newtype #}
@@ -191,8 +219,8 @@ deriving instance Generic CustomOpPropCreator
 
 -- | Callback: MXKVStoreUpdater, user-defined updater for the kvstore.
 type MXKVStoreUpdater = Int             -- ^ The key.
-                      -> NDArrayHandle  -- ^ The pushed value on the key.
-                      -> NDArrayHandle  -- ^ The value stored on local on the key.
+                      -> NDArrayHandlePtr  -- ^ The pushed value on the key.
+                      -> NDArrayHandlePtr  -- ^ The value stored on local on the key.
                       -> Ptr ()         -- ^ The additional handle to the updater.
                       -> IO Int
 

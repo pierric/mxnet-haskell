@@ -162,4 +162,5 @@ module MXNet.Core.Base.Internal
     ) where
 
 import MXNet.Core.Types.Internal
+import MXNet.Core.Types.Internal.Raw
 import MXNet.Core.Base.Internal.Raw
