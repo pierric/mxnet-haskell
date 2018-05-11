@@ -158,7 +158,7 @@ module MXNet.Core.Base.Internal
     , mxRtcPush
     , mxRtcFree
     , mxCustomOpRegister
-    , checked    
+    , checked
     ) where
 
 import MXNet.Core.Types.Internal

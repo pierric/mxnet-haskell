@@ -121,6 +121,7 @@ deriving instance Generic AtomicSymbolHandle
 
 -- | Handle to a AtomicSymbol.
 {#pointer AtomicSymbolHandle newtype #}
+deriving instance Generic AtomicSymbolHandle
 
 instance Storable AtomicSymbolHandle where
     sizeOf (AtomicSymbolHandle t) = sizeOf t

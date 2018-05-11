@@ -11,3 +11,10 @@ extra-deps:
 flags: {}
 
 extra-package-dbs: []
+
+extra-include-dirs:
+- /home/jason/incubator-mxnet/include
+- /home/jason/incubator-mxnet/nnvm/include
+extra-lib-dirs:
+- /home/jason/incubator-mxnet/lib
+- /home/jason/incubator-mxnet/nnvm/lib
