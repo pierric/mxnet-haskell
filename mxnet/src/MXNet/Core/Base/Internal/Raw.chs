@@ -40,7 +40,6 @@ import Data.Tuple.Ops
     {
     } -> `String' #}
 
-
 data MXNetError = MXNetError String
     deriving (Typeable, Show)
 instance Exception MXNetError
@@ -128,6 +127,7 @@ checked call = do
     , alloca- `Ptr CChar' peek* -- ^ The head of returning memory bytes.
     } -> `Int' #}
 
+--- | Save list of narray into the file
 {#fun MXNDArraySave as mxNDArraySave
     { `String'                      -- ^ Name of the file.
     , id `MXUInt'                   -- ^ Number of arguments to save.
@@ -767,7 +767,7 @@ mxSymbolInferType handle args = do
     { withExecutorHandle* `ExecutorHandle'   -- ^ The executor handle.
     , `Int'                 -- ^ int value to indicate whether the forward pass is for
                             -- evaluation.
-    } -> `Int' #}   
+    } -> `Int' #}
 
 -- | Excecutor run backward.
 {#fun MXExecutorBackward as mxExecutorBackward

@@ -36,7 +36,6 @@ Library
         MXNet.Core.Predict.Internal.Raw
         MXNet.Core.NNVM.Internal.Raw
         MXNet.Core.Base.Internal.TH
-        MXNet.Core.Base.Internal.TrustPkgs
     hs-source-dirs:         src
     build-tools:            c2hs
     ghc-options:            -Wall
