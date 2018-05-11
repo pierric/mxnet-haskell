@@ -117,7 +117,6 @@ instance Storable FunctionHandle where
 
 -- | Handle to a function that takes param and creates symbol.
 type AtomicSymbolCreator = OpHandle
-deriving instance Generic AtomicSymbolHandle
 
 -- | Handle to a AtomicSymbol.
 {#pointer AtomicSymbolHandle newtype #}
