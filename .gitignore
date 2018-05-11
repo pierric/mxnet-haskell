@@ -28,3 +28,4 @@ _site/
 
 # extra-include-dirs and extra-library-dirs
 include/
+lib/
