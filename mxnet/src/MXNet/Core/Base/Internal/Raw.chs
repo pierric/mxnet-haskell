@@ -127,7 +127,7 @@ checked call = do
     , alloca- `Ptr CChar' peek* -- ^ The head of returning memory bytes.
     } -> `Int' #}
 
---- | Save list of narray into the file
+-- | Save list of narray into the file.
 {#fun MXNDArraySave as mxNDArraySave
     { `String'                      -- ^ Name of the file.
     , id `MXUInt'                   -- ^ Number of arguments to save.
