@@ -125,7 +125,7 @@ add' _ v (HMap kvs) = HMap (Cons v kvs)
 (.+.) :: forall k v kvs. 'No ~ FindKV k v kvs => v -> HMap kvs -> HMap (k ':= v ': kvs)
 (.+.) = add
 
-infix 8 .+.
+infixr 8 .+.
 
 {-# INLINE (.+.) #-}
 
