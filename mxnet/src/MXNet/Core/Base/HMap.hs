@@ -28,6 +28,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -55,6 +56,7 @@ module MXNet.Core.Base.HMap
     , set
     , mergeTo
     , dump
+    , get_
     ) where
 
 import           GHC.TypeLits
@@ -191,3 +193,31 @@ dump :: forall kvs. ShowKV kvs => HMap kvs -> [(String, String)]
 dump = show' . getKVList
 
 {-# INLINE dump #-}
+
+-- | Get the value of key by scrutinizing the IfHasKey.
+class GetIfHasKey (haskey :: IfHasKey) v (kvs :: [KV *]) where
+    getIfHasKey :: Proxy haskey -> HMap kvs -> Maybe v
+
+-- the compiler can deduce the actual 'v', because of the fact: 
+-- InDict has a functional dependency 'k, kvs -> v'.
+instance InDict k v kvs => GetIfHasKey ('Yes k) v kvs where
+    getIfHasKey _ m = Just $ get' @k m
+
+-- in case 'k' does not appear, leaving 'v' as a free variable.
+instance GetIfHasKey 'No v kvs where
+    getIfHasKey _ _ = Nothing
+
+-- | Find specified key pair in KVList.
+-- Note that this differs from 'FindKV' by removing the type argument 'v'. Therefore
+-- type checking the 'get_' can proceed to 'GetIfHasKey' part without knowing the 
+-- actuall of 'v'. In case of the 'k' exists, 'v' can be then automatically
+-- inferred when inspecting 'InDict'.
+type family FindK (k :: Symbol) (kvs :: [KV *]) :: IfHasKey where
+    FindK k '[] = 'No
+    FindK k (k ':= v ': kvs) = 'Yes k
+    FindK k1 (k2 ':= v ': kvs) = FindK k1 kvs
+
+-- | Get the value of key if existing
+get_ :: forall (k :: Symbol) v (kvs :: [KV *]). GetIfHasKey (FindK k kvs) v kvs => HMap kvs -> Maybe v
+get_ = getIfHasKey (Proxy :: Proxy (FindK k kvs))
+    
