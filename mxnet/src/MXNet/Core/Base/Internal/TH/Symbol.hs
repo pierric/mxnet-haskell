@@ -23,6 +23,7 @@
 module MXNet.Core.Base.Internal.TH.Symbol where
 
 import Data.Proxy
+import Data.Maybe
 
 import MXNet.Core.Base.HMap
 import MXNet.Core.Base.Internal

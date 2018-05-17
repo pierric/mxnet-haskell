@@ -421,7 +421,7 @@ instance Neural Symbol where
             handle2 = getHandle weight
             handle3 = getHandle bias
         name <- naming "FullyConnected"
-        I.fullyconnected name handle1 handle2 handle3 n nil
+        I.fullyconnected name handle1 handle2 (Just handle3) n nil
     correlation input1 input2 = Symbol <$> do
         let handle1 = getHandle input1
             handle2 = getHandle input2
@@ -466,7 +466,7 @@ instance Neural Symbol where
             handle2 = getHandle weight
             handle3 = getHandle bias
         name <- naming "Convolution"
-        I.convolution name handle1 handle2 handle3 kernel n nil
+        I.convolution name handle1 handle2 (Just handle3) kernel n nil
     lrn input alpha beta knorm nsize = Symbol <$> do
         let handle1 = getHandle input
         name <- naming "LRN"
@@ -476,7 +476,7 @@ instance Neural Symbol where
             handle2 = getHandle weight
             handle3 = getHandle bias
         name <- naming "Deconvolution"
-        I.deconvolution name handle1 handle2 handle3 kernel nfilter nil
+        I.deconvolution name handle1 handle2 (Just handle3) kernel nfilter nil
     pooling input kernel pooltype = Symbol <$> do
         let handle1 = getHandle input
         name <- naming "Pooling"

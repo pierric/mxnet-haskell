@@ -246,10 +246,18 @@ makeSymbolFunc _name desc argv argtype = do
         ordinaryArg = filter (\(v, t) -> not (t `startWith` "NDArray" || t `startWith` "Symbol")) explicitArg
         implicitArg = getImplicitArg argv argtype
         hasImplicit = (not . null) implicitArg
+    
+    -- the implicit argument no_bias affects the number of explicit argument
+    -- that should be passed. 
+    -- In this case, we set the type of the argument "bias" as Maybe XX
+    -- and pass it over only if it is not Nothing.
+    let hasKeyNoBias = "no_bias" `elem` (map (\(v,_,_)->v) implicitArg)
 
     let forallArgT = makeForallArgT implicitArg
 
-        explicitArgT = (makeHsType . snd) <$> explicitArg
+        explicitArgT = map (\(v, t) -> let hsTyp = makeHsType t
+                                           mbTyp =  AppT (ConT . mkName $ "Maybe") hsTyp
+                                       in if hasKeyNoBias && v == "bias" then mbTyp else hsTyp) explicitArg
 
         implicitArgT = if hasImplicit
                           then [AppT (ConT (mkName "HMap")) (VarT (mkName "kvs"))]
@@ -262,10 +270,13 @@ makeSymbolFunc _name desc argv argtype = do
                           then [VarP . mkName $ "varargs"]
                           else []
 
-    let ndargs = foldr (\(v, t) args -> case makeHsType t of
-                                             ConT _ -> UInfixE (VarE . mkName . ("arg'" <>) $ v) (ConE . mkName $ ":") args
-                                             AppT ListT _ -> UInfixE (VarE . mkName . ("arg'" <>) $ v) (VarE . mkName $ "++") args
-                                             _ -> error "Impossible: not a valid haskell type representation.")
+    let ndargs = foldr (\(v, t) args -> let arg = VarE . mkName . ("arg'" <>) $ v
+                                        in if hasKeyNoBias && v == "bias" 
+                                             then UInfixE (AppE (VarE $ mkName "Data.Maybe.maybeToList") arg) (VarE . mkName $ "++") args
+                                             else case makeHsType t of
+                                                ConT _ -> UInfixE (VarE . mkName . ("arg'" <>) $ v) (ConE . mkName $ ":") args
+                                                AppT ListT _ -> UInfixE (VarE . mkName . ("arg'" <>) $ v) (VarE . mkName $ "++") args
+                                                _ -> error "Impossible: not a valid haskell type representation.")
                         (ListE [])
                         ndarrayArg
 
