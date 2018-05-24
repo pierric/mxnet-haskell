@@ -13,6 +13,8 @@ addons:
     packages:
     - tar
     - gzip
+    - libopencv-dev
+    - libopenblas-dev
 
 matrix:
   include:
