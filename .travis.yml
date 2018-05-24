@@ -22,6 +22,7 @@ before_install:
     ADD mxnet-lib/lib/libmxnet.so /usr/lib/libmxnet.so
     ADD mxnet-lib/include/mxnet /usr/include/
     ADD mxnet-lib/nnvm/include/nnvm /usr/include/
+    WORKDIR /code
     " > Dockerfile
   - cat Dockerfile
 
