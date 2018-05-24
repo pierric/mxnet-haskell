@@ -37,8 +37,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-
-{-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE ConstraintKinds #-}
 
 module MXNet.Core.Base.HMap
@@ -99,13 +97,13 @@ class InDict (k :: Symbol) (v :: *) (kvs :: [KV *]) | k kvs -> v where
     get' :: HMap kvs -> v
     update' :: (v -> v) -> HMap kvs -> HMap kvs
 
-instance {-# OVERLAPPING #-} InDict k v (k ':= v ': kvs) where
+instance {-# INCOHERENT #-} InDict k v (k ':= v ': kvs) where
     get' (HMap (Cons v _)) = v
     {-# INLINE get' #-}
     update' f (HMap (Cons v kvs)) = HMap $ Cons (f v) kvs
     {-# INLINE update' #-}
 
-instance (InDict k v kvs, 'Yes k ~ FindKV k v (k' ':= v' ': kvs)) => InDict k v (k' ':= v' ': kvs) where
+instance {-# INCOHERENT #-} (InDict k v kvs, 'Yes k ~ FindKV k v (k' ':= v' ': kvs)) => InDict k v (k' ':= v' ': kvs) where
     get' (HMap (Cons _ kvs)) =  get' @k (HMap kvs)
     {-# INLINE get' #-}
     update' f (HMap (Cons v kvs)) = HMap $ Cons v (getKVList $ update' @k f (HMap kvs))
@@ -239,10 +237,9 @@ instance (KnownSymbol k1, Typeable v1, FindKVAlwaysTypeable kvs) => FindKVAlways
 class FindKVEntailsInDict (kvs :: [KV *]) where
     indictEvidence :: (KnownSymbol k, Typeable v) => Proxy k -> Proxy v -> ((FindKV k v kvs ~ 'Yes k) :- InDict k v kvs)
 
-instance (KnownSymbol k1, Typeable v1) => FindKVEntailsInDict (k1 ':= v1 ': '[]) where
-    indictEvidence pk pv = Sub $ em pk pv (Proxy :: Proxy k1) (Proxy :: Proxy v1) (Proxy :: Proxy ('[] :: [KV *]))
-                        (Sub Dict) undefined
-instance (FindKVEntailsInDict kvs, KnownSymbol k1, Typeable v1) => FindKVEntailsInDict (k1 ':= v1 ': kvs) where
+instance FindKVEntailsInDict '[] where
+    indictEvidence pk pv = Sub $ undefined
+    instance (FindKVEntailsInDict kvs, KnownSymbol k1, Typeable v1) => FindKVEntailsInDict (k1 ':= v1 ': kvs) where
     indictEvidence pk pv = Sub $ em pk pv (Proxy :: Proxy k1) (Proxy :: Proxy v1) (Proxy :: Proxy kvs) 
                                     (Sub Dict) (Sub $ case indictEvidence @kvs pk pv of Sub Dict -> Dict)
 
