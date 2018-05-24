@@ -12,37 +12,21 @@ addons:
     sources:
     - ubuntu-toolchain-r-test
     packages:
-    - unzip
-    - gcc-4.8
-    - g++-4.8
-    - libatlas-dev
-    - libatlas-base-dev
-    - libopencv-dev
+    - tar
+    - gzip
 
 matrix:
   include:
-  - env: BUILD=stack RESOLVER="lts-7.9"
-    compiler: "#stack ghc-8.0.1"
-  - env: BUILD=stack RESOLVER="lts-8.0"
-    compiler: "#stack ghc-8.0.2"
-  - env: BUILD=stack RESOLVER="nightly-2017-10-11"
-    compiler: "#stack ghc-8.2.1"
-  allow_failures:
-  - env: BUILD=stack RESOLVER="lts-7.9"
-    compiler: "#stack ghc-8.0.1"
-  - env: BUILD=stack RESOLVER="lts-8.0"
-    compiler: "#stack ghc-8.0.2"
+  - env: BUILD=stack RESOLVER="lts-11.10"
+    compiler: "#stack ghc-8.2.2"
 
 before_install:
-  # Set up the correct version of gcc and g++.
-  - sudo unlink /usr/bin/gcc && sudo ln -s /usr/bin/gcc-4.8 /usr/bin/gcc
-  - sudo unlink /usr/bin/g++ && sudo ln -s /usr/bin/g++-4.8 /usr/bin/g++
   # Download pre-built mxnet library.
-  - wget -O mxnet-lib.zip "https://drive.google.com/uc?export=download&id=0B3nF_Z9CRFTUZlhyQXFubUF5OUU" # version 0.12.0-rc0
-  - unzip mxnet-lib.zip -d mxnet-lib
-  - sudo cp mxnet-lib/lib/libmxnet.so /usr/lib/
-  - sudo cp -R mxnet-lib/include/nnvm /usr/include/
-  - sudo cp -R mxnet-lib/include/mxnet /usr/include/
+  - wget -O mxnet-lib.tar.gz "https://drive.google.com/open?id=1yY_zIiGm12wdsWeuwLaQuEwnfc2QKc8i" # version 1.0
+  - tar zxf mxnet-lib.tar.gz
+  - cp mxnet-lib/lib/libmxnet.so /usr/lib/
+  - cp -R mxnet-lib/include/nnvm /usr/include/
+  - cp -R mxnet-lib/include/mxnet /usr/include/
   # Set up haskell environment.
   - mkdir -p ~/.local/bin
   - export PATH=~/.local/bin:$PATH
@@ -54,5 +38,5 @@ install:
 
 script:
   - cd $TRAVIS_BUILD_DIR
-  - stack --resolver $RESOLVER build --bench --test --coverage --haddock --no-haddock-deps
+  - stack --resolver $RESOLVER build --haddock --no-haddock-deps
   - stack --resolver $RESOLVER test mxnet
