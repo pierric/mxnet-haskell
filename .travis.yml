@@ -1,4 +1,5 @@
-sudo: required
+sudo: false
+dist: trusty
 
 cache:
   directories:
@@ -28,9 +29,9 @@ before_install:
   # Download pre-built mxnet library.
   - wget -O mxnet-lib.tar.gz "https://drive.google.com/uc?export=download&id=1yY_zIiGm12wdsWeuwLaQuEwnfc2QKc8i" # version 1.0
   - tar zxf mxnet-lib.tar.gz
-  - sudo cp mxnet-lib/lib/libmxnet.so /usr/lib/
-  - sudo cp -R mxnet-lib/include/mxnet /usr/include/
-  - sudo cp -R mxnet-lib/nnvm/include/nnvm /usr/include/
+  - cp mxnet-lib/lib/libmxnet.so /usr/lib/
+  - cp -R mxnet-lib/include/mxnet /usr/include/
+  - cp -R mxnet-lib/nnvm/include/nnvm /usr/include/
   # Set up haskell environment.
   - mkdir -p ~/.local/bin
   - export PATH=~/.local/bin:$PATH
