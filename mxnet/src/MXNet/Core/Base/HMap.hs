@@ -239,7 +239,7 @@ class FindKVEntailsInDict (kvs :: [KV *]) where
 
 instance FindKVEntailsInDict '[] where
     indictEvidence pk pv = Sub $ undefined
-    instance (FindKVEntailsInDict kvs, KnownSymbol k1, Typeable v1) => FindKVEntailsInDict (k1 ':= v1 ': kvs) where
+instance (FindKVEntailsInDict kvs, KnownSymbol k1, Typeable v1) => FindKVEntailsInDict (k1 ':= v1 ': kvs) where
     indictEvidence pk pv = Sub $ em pk pv (Proxy :: Proxy k1) (Proxy :: Proxy v1) (Proxy :: Proxy kvs) 
                                     (Sub Dict) (Sub $ case indictEvidence @kvs pk pv of Sub Dict -> Dict)
 
