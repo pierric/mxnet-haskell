@@ -1,24 +1,7 @@
 sudo: false
 dist: trusty
-
-cache:
-  directories:
-    - $HOME/.ghc
-    - $HOME/.stack/
-
-# dependent apt packages.
-addons:
-  apt:
-    sources:
-    - ubuntu-toolchain-r-test
-    packages:
-    - tar
-    - gzip
-    - libopencv-dev
-    - libopenblas-dev
-    - gcc-5
-    - g++-5
-    - libc6
+services:
+  - docker
 
 matrix:
   include:
