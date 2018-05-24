@@ -24,4 +24,4 @@ install:
   - docker build -t buildenv .
 
 script:
-  - docker run -v /code:$TRAVIS_BUILD_DIR stack --resolver $RESOLVER build --haddock --no-haddock-deps
+  - docker run -v /code:$TRAVIS_BUILD_DIR buildenv stack --resolver $RESOLVER build --haddock --no-haddock-deps
