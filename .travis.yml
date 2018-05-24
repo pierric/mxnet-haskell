@@ -31,8 +31,8 @@ install:
 
 script:
   - echo $TRAVIS_BUILD_DIR
-  - > docker run -v /root/.stack:$HOME/.stack 
-                 -v /root/.ghc:$HOME/.ghc 
-                 -v /code:$TRAVIS_BUILD_DIR 
-                 buildenv 
-                 stack --resolver $RESOLVER build --haddock --no-haddock-deps
+  - > 
+    docker run -v /root/.stack:$HOME/.stack 
+               -v /root/.ghc:$HOME/.ghc 
+               -v /code:$TRAVIS_BUILD_DIR 
+           buildenv stack --resolver $RESOLVER build --haddock --no-haddock-deps
