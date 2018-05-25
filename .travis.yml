@@ -1,47 +1,42 @@
 sudo: false
-dist: trusty
 
 cache:
   directories:
     - $HOME/.ghc
     - $HOME/.stack/
 
-# dependent apt packages.
-addons:
-  apt:
-    sources:
-    - ubuntu-toolchain-r-test
-    packages:
-    - tar
-    - gzip
-    - libopencv-dev
-    - libopenblas-dev
-    - gcc-5
-    - g++-5
-    - libc6
-
 matrix:
   include:
-  - env: BUILD=stack RESOLVER="lts-11.10"
-    compiler: "#stack ghc-8.2.2"
+  - env: RESOLVER="lts-11.10"
 
 before_install:
   # Download pre-built mxnet library.
   - wget -O mxnet-lib.tar.gz "https://drive.google.com/uc?export=download&id=1yY_zIiGm12wdsWeuwLaQuEwnfc2QKc8i" # version 1.0
   - tar zxf mxnet-lib.tar.gz
-  - cp mxnet-lib/lib/libmxnet.so /usr/lib/
-  - cp -R mxnet-lib/include/mxnet /usr/include/
-  - cp -R mxnet-lib/nnvm/include/nnvm /usr/include/
-  # Set up haskell environment.
-  - mkdir -p ~/.local/bin
-  - export PATH=~/.local/bin:$PATH
-  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
-  - chmod +x ~/.local/bin/stack
+  - |
+    printf "\
+    FROM ubuntu:16.04
+    RUN apt-get update && apt-get install -y tar gzip libopencv-dev libopenblas-dev gcc-5 g++-5 libc6 libgmp-dev
+    RUN curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C /usr/bin '*/stack' && chmod +x /usr/bin/stack
+    ADD mxnet-lib /mxnet-lib
+    ENV LD_LIBRARY_PATH=/mxnet-lib/lib
+    WORKDIR /code
+    " > Dockerfile
+  - cat Dockerfile
 
 install:
-  - stack setup --resolver $RESOLVER
+  - docker build -t buildenv .
 
 script:
-  - cd $TRAVIS_BUILD_DIR
-  - stack --resolver $RESOLVER build --haddock --no-haddock-deps
-  - stack --resolver $RESOLVER test mxnet
+  - echo $TRAVIS_BUILD_DIR
+  - > 
+    docker run -v $HOME/.stack:/root/.stack \
+               -v $HOME/.ghc:/root/.ghc \
+               -v $TRAVIS_BUILD_DIR:/code \
+               buildenv \
+               stack --allow-different-user --resolver $RESOLVER build \
+                     --extra-include-dirs=/mxnet-lib/include \
+                     --extra-include-dirs=/mxnet-lib/nnvm/include \
+                     --extra-lib-dirs=/mxnet-lib/lib \
+                     --extra-lib-dirs=/mxnet-lib/nnvm/lib \
+                     --haddock --no-haddock-deps
