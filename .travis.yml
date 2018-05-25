@@ -32,7 +32,7 @@ install:
 script:
   - echo $TRAVIS_BUILD_DIR
   - > 
-    docker run -v /root/.stack:$HOME/.stack \
-               -v /root/.ghc:$HOME/.ghc \
-               -v /code:$TRAVIS_BUILD_DIR \
+    docker run -v $HOME/.stack:/root/.stack \
+               -v $HOME/.ghc:/root/.ghc \
+               -v $TRAVIS_BUILD_DIR:/code \
                buildenv stack --resolver $RESOLVER build --haddock --no-haddock-deps
