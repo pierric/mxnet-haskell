@@ -35,4 +35,4 @@ script:
     docker run -v $HOME/.stack:/root/.stack \
                -v $HOME/.ghc:/root/.ghc \
                -v $TRAVIS_BUILD_DIR:/code \
-               buildenv stack --resolver $RESOLVER build --haddock --no-haddock-deps
+               buildenv stack --allow-different-user --resolver $RESOLVER build --haddock --no-haddock-deps
