@@ -18,10 +18,8 @@ before_install:
     FROM ubuntu:16.04
     RUN apt-get update && apt-get install -y tar gzip libopencv-dev libopenblas-dev gcc-5 g++-5 libc6 libgmp-dev
     RUN curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C /usr/bin '*/stack' && chmod +x /usr/bin/stack
-    RUN stack setup --resolver $RESOLVER
-    ADD mxnet-lib/lib/libmxnet.so /usr/lib/libmxnet.so
-    ADD mxnet-lib/include/mxnet /usr/include/
-    ADD mxnet-lib/nnvm/include/nnvm /usr/include/
+    ADD mxnet-lib /mxnet-lib
+    ENV LD_LIBRARY_PATH=/mxnet-lib/lib
     WORKDIR /code
     " > Dockerfile
   - cat Dockerfile
@@ -35,4 +33,10 @@ script:
     docker run -v $HOME/.stack:/root/.stack \
                -v $HOME/.ghc:/root/.ghc \
                -v $TRAVIS_BUILD_DIR:/code \
-               buildenv stack --allow-different-user --resolver $RESOLVER build --haddock --no-haddock-deps
+               buildenv \
+               stack --allow-different-user --resolver $RESOLVER build \
+                     --extra-include-dirs=/mxnet-lib/include \
+                     --extra-include-dirs=/mxnet-lib/nnvm/include \
+                     --extra-lib-dirs=/mxnet-lib/lib \
+                     --extra-lib-dirs=/mxnet-lib/nnvm/lib \
+                     --haddock --no-haddock-deps
